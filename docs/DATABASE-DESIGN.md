@@ -117,13 +117,14 @@ model Venue {
 }
 
 model VenueSection {
-  id      String        @id @default(uuid())
-  venueId String
-  name    String
-  mode    InventoryMode
+  id         String        @id @default(uuid())
+  venueId    String
+  name       String
+  mode       InventoryMode
 
-  venue Venue @relation(fields: [venueId], references: [id])
-  seats VenueSeat[]
+  venue      Venue @relation(fields: [venueId], references: [id])
+  seats      VenueSeat[]
+  ticketTypes TicketTypeSection[]
 
   @@unique([venueId, name])
 }
@@ -207,9 +208,11 @@ model TicketTypeSection {
   ticketTypeId   String
   venueSectionId String
 
-  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+  ticketType   TicketType   @relation(fields: [ticketTypeId], references: [id])
+  venueSection VenueSection @relation(fields: [venueSectionId], references: [id])
 
   @@unique([ticketTypeId, venueSectionId])
+  @@index([venueSectionId])
 }
 ~~~
 
@@ -225,6 +228,11 @@ Notes:
 Inventory materializes Event Service publication data and owns runtime availability.
 
 ~~~prisma
+enum InventoryMode {
+  ASSIGNED
+  GENERAL_ADMISSION
+}
+
 enum InventorySalesState {
   NOT_OPEN
   OPEN
@@ -273,6 +281,8 @@ model SeatInventory {
   updatedAt     DateTime            @updatedAt
 
   occurrence InventoryOccurrence @relation(fields: [occurrenceId], references: [occurrenceId])
+  activeHold  InventoryHold?       @relation("ActiveSeatHold", fields: [activeHoldId], references: [id])
+  holdHistory InventoryHoldSeat[]
 
   @@unique([occurrenceId, venueSeatId])
   @@index([occurrenceId, status])
@@ -290,6 +300,8 @@ model InventoryTicketType {
   status        String
   sourceVersion Int
 
+  sectionAccess TicketTypeSectionAccess[]
+
   @@index([occurrenceId, status])
 }
 
@@ -297,7 +309,10 @@ model TicketTypeSectionAccess {
   ticketTypeId String
   sectionId    String
 
+  ticketType InventoryTicketType @relation(fields: [ticketTypeId], references: [ticketTypeId])
+
   @@id([ticketTypeId, sectionId])
+  @@index([sectionId])
 }
 
 model TicketPoolShard {
@@ -332,6 +347,7 @@ model InventoryHold {
 
   seats       InventoryHoldSeat[]
   allocations InventoryHoldAllocation[]
+  activeSeats SeatInventory[]     @relation("ActiveSeatHold")
 
   @@index([status, expiresAt])
   @@index([userId, createdAt])
@@ -345,7 +361,8 @@ model InventoryHoldSeat {
   unitPrice       Decimal @db.Decimal(12, 2)
   currency        String
 
-  hold InventoryHold @relation(fields: [holdId], references: [id])
+  hold          InventoryHold @relation(fields: [holdId], references: [id])
+  seatInventory SeatInventory @relation(fields: [seatInventoryId], references: [id])
 
   @@unique([holdId, seatInventoryId])
   @@index([seatInventoryId])
