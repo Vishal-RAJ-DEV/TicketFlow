@@ -1,770 +1,422 @@
-# Railway Booking Platform - Microservices Architecture
+# TICKETFLOW — High-Concurrency Event Ticketing Platform
 
-> A production-grade microservices-based railway booking system backend, built for learning and demonstrating enterprise architecture patterns.
+> A distributed event-ticketing platform designed around concurrent seat reservations, general-admission capacity management, virtual waiting rooms, payment orchestration and reliable digital ticket issuance.
 
-
----
-
-## 📋 Table of Contents
-
-- [Overview](#-overview)
-- [Architecture](#-architecture)
-- [Port Reference](#-port-reference)
-- [Tech Stack](#-tech-stack)
-- [Getting Started](#-getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Running the Application](#running-the-application)
-- [Services](#-services)
-- [Kafka Topics](#-kafka-topics)
-- [API Documentation](#-api-documentation)
-- [Environment Variables](#-environment-variables)
-- [Project Structure](#-project-structure)
+**Repository:** `Vishal-RAJ-DEV/TicketFlow`  
+**Current milestone:** Phase 1 — Architecture baseline  
+**Project status:** Architecture documented; application transformation has not started.
 
 ---
 
-## 🎯 Overview
+## Table of contents
 
-This project demonstrates a complete microservices architecture for a railway booking system, covering:
-
-- **Microservices Design Patterns** — Database-per-service, API Gateway, Saga
-- **Inter-Service Communication** — REST (sync) and Kafka (async/event-driven)
-- **Authentication & Authorization** — JWT (access + refresh), OTP via email, Google OAuth
-- **Database Management** — PostgreSQL via Prisma ORM (5 services), Elasticsearch (search)
-- **Caching & Locking** — Redis for sessions, OTP storage, distributed seat locks
-- **Containerization** — Docker Compose for the full infra stack
-- **Resilience** — Rate limiting, circuit breakers, Dead-Letter Queues (DLQ) on every Kafka consumer
-
-**🎓 Learning Objectives:**
-- Build scalable microservices with database-per-service ownership
-- Implement real-world authentication flows (OTP + JWT + Google OAuth)
-- Coordinate distributed transactions with Saga + Kafka
-- Handle concurrent seat reservations with Redis distributed locks
-- Build a production-style API Gateway with proxying, JWT enforcement, rate limiting, and circuit breakers
+- [Project overview](#-project-overview)
+- [Product scope](#-product-scope)
+- [Architecture at a glance](#-architecture-at-a-glance)
+- [Core engineering principles](#-core-engineering-principles)
+- [Service boundaries](#-service-boundaries)
+- [Purchase workflow](#-purchase-workflow)
+- [Technology stack](#-technology-stack)
+- [Repository status](#-repository-status)
+- [Development environment](#-development-environment)
+- [Implementation roadmap](#-implementation-roadmap)
+- [Architecture documentation](#-architecture-documentation)
+- [Engineering standards](#-engineering-standards)
 
 ---
 
-## 🏗️ Architecture
+## 🎯 Project overview
 
-```
-                            ┌───────────────────────┐
-                            │  Frontend (React)     │
-                            │  Port 3000            │
-                            └───────────┬───────────┘
-                                        │
-                            ┌───────────▼───────────┐
-                            │   API Gateway         │
-                            │   Port 4000           │
-                            │ (JWT, rate limit,     │
-                            │  circuit breaker)     │
-                            └───┬───────┬───────┬───┘
-              ┌─────────────────┼───────┼───────┼───────────────┐
-              │                 │       │       │               │
-   ┌──────────▼──────┐ ┌────────▼─┐ ┌───▼────┐ ┌▼──────────┐ ┌──▼──────────┐
-   │ User Service    │ │ Search   │ │ Admin  │ │ Booking   │ │ Payment     │
-   │ Port 4001       │ │ 4002     │ │ 4003   │ │ 4005      │ │ 4006        │
-   └────────┬────────┘ └────┬─────┘ └───┬────┘ └─────┬─────┘ └─────┬───────┘
-            │               │           │            │             │
-            │          ┌────▼──────┐    │     ┌──────▼─────┐       │
-            │          │ Inventory │    │     │ Notification│      │
-            │          │ 4007      │    │     │ 4004 (Kafka)│      │
-            │          └────┬──────┘    │     └──────┬──────┘      │
-            │               │           │            │             │
-            └───────────────┴───────────┴────────────┴─────────────┘
-                                      │
-                ┌─────────────────────┼─────────────────────┐
-                │                     │                     │
-        ┌───────▼──────┐    ┌─────────▼────────┐   ┌────────▼────────┐
-        │  PostgreSQL  │    │  Redis Stack     │   │   Kafka         │
-        │  Port 5432   │    │  Port 6379/8001  │   │   Port 9092/9093│
-        └──────────────┘    └──────────────────┘   └─────────────────┘
-                                                            │
-                                                  ┌─────────▼─────────┐
-                                                  │  Elasticsearch    │
-                                                  │  Port 9200        │
-                                                  └───────────────────┘
-```
+TICKETFLOW is a multi-organizer platform for discovering and booking tickets to concerts, sports events, comedy shows, festivals and conferences.
 
-**Highlights:**
-- **API Gateway** is the single entrypoint for the frontend; it proxies to the right service and enforces JWT, rate limits, and circuit breakers.
-- **Database-per-service** — each service owns its own Postgres database, search-service uses Elasticsearch.
-- **Event-driven** — Kafka decouples booking, payment, inventory, search and notification flows. Topics are centralized in [shared/constants/kafka-topics.js](shared/constants/kafka-topics.js).
-- **Notification service has no HTTP API** — it is purely a Kafka consumer that sends emails via SendGrid.
+Customers can discover events, select an event occurrence, enter a controlled sales flow when required, reserve seats or general-admission tickets, pay securely and receive digital tickets. Organizers manage events, venues, ticket categories and sales windows. Gate operators validate tickets and record entry.
+
+The main engineering objective is to build a system that preserves business correctness under high concurrency and remains recoverable when individual services, databases, Kafka consumers or payment integrations fail.
+
+### Core capabilities
+
+**Customer experience**
+- Event discovery by category, date, city and price.
+- Event occurrence details and venue seating maps.
+- Virtual waiting room for high-demand ticket releases.
+- Assigned-seat reservations and general-admission purchases.
+- Secure checkout, order status and payment history.
+- Digital tickets with QR-based entry credentials.
+- Eligible cancellations, refunds and ticket status tracking.
+
+**Organizer experience**
+- Organizer accounts and member permissions.
+- Event, venue, section and seating-layout management.
+- Multiple occurrences for an event.
+- Ticket types, pricing, capacity and sales windows.
+- Event sales and attendance reporting.
+
+**Gate operations**
+- Event/venue-scoped gate-operator access.
+- QR ticket validation.
+- Duplicate check-in prevention.
+- Attendance and scan audit records.
 
 ---
 
-## 🔌 Port Reference
+## 🧭 Product scope
 
-A single quick-glance table of every port the project uses.
+### Event versus occurrence
 
-### Application Services
+An **Event** is the catalog-level product, such as a concert tour. An **Event Occurrence** is one independently bookable instance at a specific venue and time.
 
-| Service | Port | Direct URL |
+Example:
+
+| Event | Occurrence | Venue |
 |---|---|---|
-| Frontend (Vite + React) | 3000 | http://localhost:3000 |
-| API Gateway | 4000 | http://localhost:4000 |
-| User Service | 4001 | http://localhost:4001 |
-| Search Service | 4002 | http://localhost:4002 |
-| Admin Service | 4003 | http://localhost:4003 |
-| Notification Service | 4004 | (Kafka-only, no HTTP) |
-| Booking Service | 4005 | http://localhost:4005 |
-| Payment Service | 4006 | http://localhost:4006 |
-| Inventory Service | 4007 | http://localhost:4007 |
+| Arijit Singh Live Tour | 15 December | Delhi |
+| Arijit Singh Live Tour | 20 December | Mumbai |
+| Arijit Singh Live Tour | 27 December | Bengaluru |
 
-### Infrastructure (from [docker-compose.yml](docker-compose.yml))
+Inventory, queueing, booking and sales windows are scoped to an occurrence—not just the event.
 
-| Component | Port(s) | Access |
+### Two inventory models
+
+| Model | How it works | Example |
 |---|---|---|
-| PostgreSQL 15 | 5432 | `admin` / `railpass` |
-| pgAdmin | 8081 | http://localhost:8081 — `admin@admin.com` / `admin` |
-| Redis Stack | 6379 (Redis), 8001 (RedisInsight) | password `railpass` — RedisInsight at http://localhost:8001 |
-| Zookeeper | 2181 | — |
-| Kafka | 9092 (internal), 9093 (host) | host clients connect to `localhost:9093` |
-| Kafka UI | 8080 | http://localhost:8080 |
-| Elasticsearch 8.12 | 9200 | http://localhost:9200 (single-node, security disabled) |
-| Kibana 8.12 | 5601 | http://localhost:5601 |
+| Assigned seating | Every ticket is associated with a specific physical seat | Section A, Row 5, Seat 12 |
+| General admission | Customers purchase a quantity from a shared capacity pool | Standing area with 5,000 tickets |
+
+Both models use a consistent hold/confirm/release contract while applying different allocation logic internally.
 
 ---
 
-## 🛠️ Tech Stack
+## 🏗️ Architecture at a glance
 
-### Backend
-- **Runtime**: Node.js (v18+)
-- **Language**: JavaScript (ES Modules)
-- **Framework**: Express.js 5
-- **ORM**: Prisma 7 (user, admin, booking, payment, inventory)
-- **Authentication**: JWT (access + refresh), OTP via SendGrid, Google OAuth (`google-auth-library`)
-- **Search**: Elasticsearch 8.12
-- **Logging**: Winston
-- **Security**: Helmet, CORS, bcrypt
-- **Payments**: Razorpay SDK
-- **Messaging**: KafkaJS
+The target architecture contains ten deployable application services: one API Gateway and nine domain services.
 
-### Frontend
-- React 18 + Vite 6
-- React Router 6, Zustand (state), React Hook Form, Axios
-- Tailwind CSS 3
-- Dev server proxies `/api` → API Gateway (port 4000)
+~~~mermaid
+flowchart TB
+  C[Customer / Organizer / Gate App] --> GW[API Gateway]
+  GW --> U[User Service]
+  GW --> S[Search Service]
+  GW --> E[Event Service]
+  GW --> Q[Queue Service]
+  GW --> I[Inventory Service]
+  GW --> O[Order Service]
+  GW --> P[Payment Service]
+  GW --> T[Ticket Service]
 
-### Databases & Caching
-- **PostgreSQL 15** — one database per Prisma service
-- **Redis Stack** — sessions, OTP cache, distributed seat locks, rate-limit counters
-- **Elasticsearch 8.12** — train and station search index
+  O <-->|Internal commands| I
+  O <-->|Internal commands| P
 
-### Messaging
-- **Apache Kafka** (Confluent 7.5) with Zookeeper
-- **Kafka UI** for topic inspection
-- Dead-Letter Queue topics (`dlq.<service>`) for every consumer
+  E -->|Catalog events| K[(Kafka)]
+  I -->|Inventory events| K
+  O -->|Order events| K
+  P -->|Payment / refund events| K
+  T -->|Ticket events| K
 
-### DevOps
-- Docker, Docker Compose
-- pgAdmin, RedisInsight, Kafka UI, Kibana
+  K --> S
+  K --> O
+  K --> T
+  K --> N[Notification Service]
+
+  U --> UDB[(user_db)]
+  E --> EDB[(event_db)]
+  I --> IDB[(inventory_db)]
+  O --> ODB[(order_db)]
+  P --> PDB[(payment_db)]
+  T --> TDB[(ticket_db)]
+  N --> NDB[(notification_db)]
+  S --> ES[(Elasticsearch)]
+  Q --> R[(Redis)]
+  GW --> R
+~~~
+
+### Target service map
+
+| Service | Planned local port | Responsibility | Primary state |
+|---|---:|---|---|
+| API Gateway | 4000 | Routing, authentication enforcement, rate limiting and circuit breakers | Redis for rate-limit state |
+| User Service | 4001 | Identity, OTP, OAuth, tokens and user profile | PostgreSQL: `user_db` |
+| Search Service | 4002 | Event discovery and search projections | Elasticsearch |
+| Event Service | 4003 | Organizers, events, venues, layouts, occurrences and ticket types | PostgreSQL: `event_db` |
+| Notification Service | 4004 | Email delivery, templates and retries | PostgreSQL: `notification_db` |
+| Order Service | 4005 | Purchase lifecycle, Saga orchestration and recovery | PostgreSQL: `order_db` |
+| Payment Service | 4006 | Payment attempts, verified webhooks, refunds and audit | PostgreSQL: `payment_db` |
+| Inventory Service | 4007 | Assigned seats, GA capacity shards, holds and expiry | PostgreSQL: `inventory_db` |
+| Queue Service | 4008 | Waiting room, admission control and single-use tokens | Redis operational state |
+| Ticket Service | 4009 | Ticket issuance, credentials, revocation and check-in | PostgreSQL: `ticket_db` |
+
+> **Important:** These are the target service names and planned ports. The imported application directories have not yet been transformed to this target architecture. Do not treat this table as a statement that the TICKETFLOW APIs are already running.
+
+### Data ownership
+
+TICKETFLOW follows database-per-service ownership. Services may run on one PostgreSQL instance during local development, but each service gets a separate database and credentials. No service directly reads or writes another service's database.
+
+- Event Service owns event/catalog configuration and venue layout.
+- Inventory Service owns current allocation, holds and confirmation.
+- Order Service owns customer purchase state and Saga execution.
+- Payment Service owns provider payment/refund state.
+- Ticket Service owns ticket credentials and check-in.
+- Search Service owns a rebuildable read projection.
+- Queue Service owns short-lived admission state.
 
 ---
 
-## 🚀 Getting Started
+## ⚙️ Core engineering principles
+
+### 1. Inventory correctness first
+
+PostgreSQL is the final authority for reservations and sales.
+
+- Redis may provide fast advisory locks, queueing and caching.
+- An acquired Redis lock is not a confirmed reservation.
+- Assigned seats use row-level locking and conditional state transitions.
+- General-admission capacity uses sharded counters and database constraints.
+- Multi-seat or multi-shard holds are all-or-nothing transactions.
+
+### 2. Distributed transactions with Saga
+
+The order flow spans Inventory, Payment and Ticket services. Each service commits only to its own database. Order Service coordinates the workflow and records each step so it can retry or compensate after failures.
+
+### 3. Transactional Outbox and Inbox
+
+Critical business changes and outgoing events are recorded in the same local database transaction. Consumers use an Inbox/deduplication key to avoid repeating business effects when Kafka redelivers a message.
+
+The design provides at-least-once event delivery with idempotent processing; it does not claim end-to-end exactly-once execution across databases and external providers.
+
+### 4. Controlled admission and backpressure
+
+A virtual waiting room protects high-demand ticket releases from sudden traffic bursts. Admission tokens are short-lived, bound to a customer and occurrence, and single-use. Joining a queue does not reserve inventory or guarantee a ticket.
+
+### 5. Eventual consistency for read models
+
+Elasticsearch and cached availability are read models. They may be slightly stale. Inventory Service must revalidate every purchase against authoritative database state.
+
+### 6. Measure before scaling
+
+The project will use load tests and observability to identify bottlenecks before introducing read replicas, database partitions or dedicated inventory shards.
+
+---
+
+## 🔁 Purchase workflow
+
+The primary purchase workflow is:
+
+1. Customer authenticates and joins a waiting room when one is enabled.
+2. Queue Service issues an admission token for the selected occurrence.
+3. Order Service creates an idempotent order and validates its pricing snapshot.
+4. Inventory Service atomically holds the requested seats or general-admission quantity.
+5. Payment Service creates a payment attempt.
+6. Payment provider sends a signed webhook; Payment Service verifies and records the result.
+7. Order Service resumes its Saga and asks Inventory Service to confirm the still-valid hold.
+8. Ticket Service consumes the inventory-confirmed order event and issues digital tickets idempotently.
+9. Order Service marks the purchase completed after ticket issuance is confirmed.
+10. Notification Service delivers the ticket to the customer.
+
+### Important failure cases
+
+| Scenario | Expected behaviour |
+|---|---|
+| Two customers reserve the same seat | Only one hold succeeds |
+| General-admission requests exceed capacity | Database never allows overselling |
+| Payment fails | Active hold is released |
+| Customer closes checkout | Hold expires and inventory is released |
+| Kafka is unavailable after a database commit | Outbox publishes after recovery |
+| Payment webhook is delivered repeatedly | Deduplication prevents duplicate effects |
+| Payment succeeds after hold expiry | No ticket is issued; refund compensation begins |
+| Ticket Service is unavailable | Issuance is retried without duplicate tickets |
+| Same ticket is scanned at two gates | Exactly one check-in succeeds |
+
+See [ORDER-SAGA.md](docs/ORDER-SAGA.md) for detailed state transitions, compensation and recovery.
+
+---
+
+## 🧰 Technology stack
+
+The following technologies are selected for the target design. Some are already present in the imported codebase; new components will be introduced in their implementation phases.
+
+| Area | Technology | Intended use |
+|---|---|---|
+| Backend runtime | Node.js | Service runtime |
+| Backend framework | Express.js | HTTP APIs |
+| ORM | Prisma | Service-owned PostgreSQL schemas |
+| Relational storage | PostgreSQL | Orders, payments, inventory, catalog and tickets |
+| Cache / coordination | Redis Stack | Queue state, caching, rate limits and ephemeral locks |
+| Event streaming | Apache Kafka / KafkaJS | Asynchronous service communication |
+| Search | Elasticsearch | Event discovery and search projections |
+| Frontend | React + Vite | Customer and organizer applications |
+| Styling | Tailwind CSS | Frontend styling |
+| Client state | Zustand | Frontend state |
+| HTTP client | Axios | API communication |
+| Payments | Razorpay | Payment, webhook and refund integration |
+| Containerization | Docker / Docker Compose | Local infrastructure and service development |
+| Observability target | OpenTelemetry, Prometheus, Grafana | Traces, metrics and operational dashboards |
+| Load testing target | k6 | Concurrency and performance testing |
+
+---
+
+## 📦 Repository status
+
+The TicketFlow repository was initialized by importing the existing TRIVIO codebase. TRIVIO remains a separate project in its original repository. This repository is the target for the TICKETFLOW transformation.
+
+### Current milestone
+
+<badge color="success">Phase 1 — Documentation committed</badge>
+
+The following architecture documents are available:
+
+| Document | Purpose |
+|---|---|
+| [TICKETFLOW-ARCHITECTURE.md](docs/TICKETFLOW-ARCHITECTURE.md) | Target topology, service ownership and architecture decisions |
+| [DOMAIN-MODEL.md](docs/DOMAIN-MODEL.md) | Entities, relationships, business rules and invariants |
+| [DATABASE-DESIGN.md](docs/DATABASE-DESIGN.md) | Database ownership, Prisma design references and constraints |
+| [KAFKA-EVENT-CONTRACTS.md](docs/KAFKA-EVENT-CONTRACTS.md) | Topics, event envelope, partitioning and delivery rules |
+| [ORDER-SAGA.md](docs/ORDER-SAGA.md) | Purchase state machine, compensation and failure recovery |
+
+### Implementation status
+
+| Component | Status |
+|---|---|
+| TRIVIO codebase imported into this repository | Complete |
+| TICKETFLOW architecture documentation | Complete |
+| TICKETFLOW domain and database design | Documented; not implemented |
+| Event Service | Not started |
+| Inventory transformation | Not started |
+| Order / Payment Saga transformation | Not started |
+| Ticket Service | Not started |
+| Queue Service | Not started |
+| Search and frontend transformation | Not started |
+| Load tests and production hardening | Not started |
+
+**Current-codebase warning:** Existing directories such as `admin-service`, `booking-service`, `inventory-service` and the imported frontend still contain the original railway-domain implementation. Existing railway endpoints and workflows are not TICKETFLOW APIs. They will be transformed phase by phase. The current Docker Compose file is also inherited and its project/network names will be aligned with TICKETFLOW during the infrastructure implementation work.
+
+---
+
+## 🖥️ Development environment
 
 ### Prerequisites
 
-| Tool | Version | Download |
-|---|---|---|
-| Node.js | >= 18.0.0 | [nodejs.org](https://nodejs.org/) |
-| npm | >= 9.0.0 | (bundled with Node.js) |
-| Docker | >= 20.0.0 | [docker.com](https://www.docker.com/) |
-| Docker Compose | >= 2.0.0 | (bundled with Docker Desktop) |
-| Git | >= 2.30.0 | [git-scm.com](https://git-scm.com/) |
+| Tool | Recommended requirement |
+|---|---|
+| Node.js | 18 or newer |
+| npm | 9 or newer |
+| Docker | 20 or newer |
+| Docker Compose | Compose v2 |
+| Git | 2.30 or newer |
+
+Check local versions:
 
 ```bash
 node --version
 npm --version
 docker --version
 docker compose version
+git --version
 ```
+
+### Start the current local infrastructure
+
+The existing `docker-compose.yml` currently provides development infrastructure only. It does **not** start the application microservices.
+
+From the repository root:
+
+```bash
+docker compose up -d
+docker compose ps
+```
+
+Stop the infrastructure:
+
+```bash
+docker compose down
+```
+
+Stop and remove local containers plus their named volumes (this deletes local development data):
+
+```bash
+docker compose down -v
+```
+
+### Current Docker Compose services
+
+These are the ports defined by the inherited Compose configuration today:
+
+| Infrastructure component | Host port(s) | Local purpose |
+|---|---:|---|
+| PostgreSQL 15 | 5432 | Relational databases |
+| pgAdmin | 8081 | PostgreSQL administration |
+| Redis Stack | 6379, 8001 | Cache/coordination and RedisInsight |
+| Zookeeper | 2181 | Current Kafka broker coordination |
+| Kafka | 9092 internal, 9093 host | Event streaming |
+| Kafka UI | 8080 | Topic and consumer inspection |
+| Elasticsearch 8.12 | 9200 | Search index |
+| Kibana 8.12 | 5601 | Elasticsearch inspection |
+
+**Local development security warning:** The inherited Compose file uses development credentials, plaintext Kafka, and Elasticsearch with security disabled. Do not expose these ports to the public internet or reuse these credentials in production. Change credentials and security settings as part of environment hardening. The Compose project/network identifiers are still inherited from TRIVIO and will be renamed in the infrastructure phase.
+
+### Application services
+
+Application setup and startup commands will be documented when each service is converted to TICKETFLOW. Until then, running the imported service scripts may start legacy railway workflows and should not be treated as a working TICKETFLOW deployment.
+
+Never commit real `.env` files, payment secrets, JWT secrets or provider credentials.
 
 ---
 
-### Installation
+## 🗺️ Implementation roadmap
 
-#### 1. Clone the repository
-```bash
-git clone <your-repository-url>
-cd <project-directory>
-```
+Implementation is intentionally chunked. Each phase must have code changes, migrations where applicable, tests and a completion report before the next phase begins.
 
-#### 2. Start the infrastructure stack
-```bash
-docker-compose up -d
-docker ps
-```
-
-This starts **all** infrastructure containers: PostgreSQL, pgAdmin, Redis Stack, Zookeeper, Kafka, Kafka UI, Elasticsearch and Kibana. See the [Port Reference](#-port-reference) for access URLs.
-
-#### 3. Install and configure each service
-For every backend service (`user-service`, `admin-service`, `booking-service`, `payment-service`, `inventory-service`, `search-service`, `notification-service`, `api-gateway`):
-
-```bash
-cd <service-name>
-npm install
-cp .env.example .env       # then fill in real secrets
-```
-
-For the **5 services with Prisma** (`user-service`, `admin-service`, `booking-service`, `payment-service`, `inventory-service`), also run migrations:
-
-```bash
-npx prisma migrate dev --name init
-npx prisma generate
-```
-
-#### 4. Install the frontend
-```bash
-cd frontend
-npm install
-cp .env.example .env
-```
-
----
-
-### Running the Application
-
-Open one terminal per service. The recommended startup order respects Kafka consumer dependencies:
-
-```bash
-# 1. Infrastructure
-docker-compose up -d
-
-# 2. Admin service (publishes station/train/route/schedule events)
-cd admin-service && npm run dev
-
-# 3. Inventory service (consumes admin.schedule-* events)
-cd inventory-service && npm run dev
-
-# 4. Search service (consumes admin.* and inventory.* events)
-cd search-service && npm run dev
-
-# 5. User service
-cd user-service && npm run dev
-
-# 6. Payment service
-cd payment-service && npm run dev
-
-# 7. Booking service (consumes payment.* and admin.schedule-cancelled)
-cd booking-service && npm run dev
-
-# 8. Notification service (consumes booking.* and notification.* events)
-cd notification-service && npm run dev
-
-# 9. API Gateway
-cd api-gateway && npm run dev
-
-# 10. Frontend
-cd frontend && npm run dev
-```
-
-Frontend will be available at **http://localhost:3000** and proxies API calls to the gateway at **http://localhost:4000**.
-
----
-
-## 📦 Services
-
-All services are implemented (✅). Endpoints below show the **direct** path on each service. Through the API Gateway, prefix everything with `/api/<service-name>` (see each service's "Gateway path" below).
-
-### 1. API Gateway — Port 4000
-Single entrypoint. Routes requests to backend services, enforces JWT, applies per-route rate limits, and trips circuit breakers on downstream failure.
-
-**Notable endpoints:**
-
-| Method | Path | Notes |
+| Phase | Scope | Exit criteria |
 |---|---|---|
-| GET | `/health` | Liveness |
-| GET | `/api/gateway/health` | Aggregate downstream health |
-| GET | `/api/gateway/circuit-breakers` | Inspect breaker state |
-| ANY | `/api/users/*` → user-service | |
-| ANY | `/api/search/*` → search-service | |
-| ANY | `/api/admins/*` → admin-service | |
-| ANY | `/api/bookings/*` → booking-service | |
-| ANY | `/api/payments/*` → payment-service | |
-| ANY | `/api/inventory/*` → inventory-service | |
+| **1. Architecture baseline** | System architecture, domain model, database design, Kafka contracts and Order Saga | Five architecture documents reviewed and committed |
+| **2. Event Service** | Organizer, venue, layout, event, occurrence, ticket types, authorization and publication | Organizer can configure and publish a valid event occurrence |
+| **3. Inventory foundation** | Occurrence materialization, assigned-seat holds, GA shards, confirmation, release, expiry and inbox/outbox | Concurrency tests prove no double allocation or oversell |
+| **4. Order and Payment Saga** | Order state machine, idempotency, payment attempts, webhooks, compensation and recovery | Purchase workflow recovers from injected failures |
+| **5. Ticketing** | Ticket issuance, QR credentials, revocation and atomic check-in | Duplicate issuance and duplicate check-in are prevented |
+| **6. Queue Service** | Waiting room, admission tokens, controlled throughput and backpressure | High-demand admission is regulated and recoverable |
+| **7. Search and frontend** | Event discovery, seating experience, organizer dashboard and checkout | End-to-end TICKETFLOW purchase is usable |
+| **8. Production hardening** | Observability, load tests, reconciliation, security and deployment | Measured performance and failure-test evidence is documented |
 
-**Tech:** Express, axios, ioredis, jsonwebtoken, helmet, morgan, winston.
+### Next implementation milestone
 
----
+**Phase 2 — Event Service transformation**
 
-### 2. User Service — Port 4001
-User registration, OTP verification, JWT issuance + rotation, Google OAuth, profile management.
+The first coding chunk will inspect the imported Admin Service, Prisma setup, dependencies and event publication path. Then the railway-specific schema will be replaced with the TICKETFLOW domain model: Organizer, OrganizerMember, Venue, VenueSection, VenueSeat, Event, EventOccurrence and TicketType.
 
-**Database:** PostgreSQL `user_service_database` (models: `User`, `AuthProvider`)
-**Gateway path:** `/api/users/*`
-
-| Method | Path | Auth |
-|---|---|---|
-| POST | `/auth/send-otp` | — |
-| POST | `/auth/verify-otp` | — |
-| POST | `/auth/login` | — |
-| POST | `/auth/refresh` | — |
-| POST | `/auth/google-auth` | — |
-| GET | `/user/profile` | JWT |
-| PUT | `/user/profile` | JWT |
-| DELETE | `/user/profile` | JWT |
-| GET | `/user/internal/:userId` | `INTERNAL_SERVICE_KEY` |
-| GET | `/health` | — |
-
-**Kafka — produces:** `notification.otp-email`, `notification.welcome-email`
+Inventory transformation will wait until the Event Service contract is stable.
 
 ---
 
-### 3. Search Service — Port 4002
-Train and station search backed by Elasticsearch. Indexes are kept fresh by consuming admin and inventory events.
+## 📚 Architecture documentation
 
-**Datastore:** Elasticsearch (no Postgres)
-**Gateway path:** `/api/search/*`
+The `docs/` directory is the source of truth for architecture decisions:
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/trains?from=&to=&date=` | Train search |
-| GET | `/autocomplete?q=` | Station autocomplete |
-| GET | `/debug/stations` | Indexed stations (debug) |
-| GET | `/debug/trains` | Indexed trains (debug) |
+- [System architecture](docs/TICKETFLOW-ARCHITECTURE.md)
+- [Domain model and business rules](docs/DOMAIN-MODEL.md)
+- [Database design and ownership](docs/DATABASE-DESIGN.md)
+- [Kafka event contracts](docs/KAFKA-EVENT-CONTRACTS.md)
+- [Order Saga and recovery](docs/ORDER-SAGA.md)
 
-**Kafka — consumes:** `admin.station-created`, `admin.route-created`, `admin.schedule-created`, `admin.schedule-cancelled`, `inventory.seat-availability-updated`
-**DLQ:** `dlq.search-service`
+When implementation decisions change, update the relevant architecture document in the same phase. Documentation must describe the implemented behaviour, not an aspirational feature as if it already exists.
 
 ---
 
-### 4. Admin Service — Port 4003
-Source of truth for stations, trains, routes and schedules. Publishes domain events that all read-side services consume.
+## 🧪 Engineering standards
 
-**Database:** PostgreSQL `admin_service_database` (models: `Station`, `Train`, `Seat`, `Route`, `RouteStation`, `Schedule`)
-**Gateway path:** `/api/admins/*`
+Every implementation chunk should meet these standards:
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/station` | List stations |
-| POST | `/station` | Create station |
-| GET | `/station/:stationId` | Get station |
-| GET | `/station/internal/:stationId` | Internal lookup |
-| GET | `/train` | List trains |
-| POST | `/train` | Create train |
-| GET | `/train/:trainId` | Get train |
-| POST | `/route` | Create route |
-| GET | `/schedule` | List schedules |
-| POST | `/schedule` | Create schedule |
-| PUT | `/schedule/:scheduleId` | Cancel schedule |
-| GET | `/health` | — |
-
-**Kafka — produces:** `admin.station-created`, `admin.train-created`, `admin.route-created`, `admin.schedule-created`, `admin.schedule-cancelled`
+1. **Scope control:** Change only the services/files needed for the current chunk.
+2. **Database ownership:** No cross-service database access or foreign keys.
+3. **Correctness:** Enforce critical invariants in database constraints and transactions, not only application checks.
+4. **Idempotency:** Protect client commands, provider webhooks and Kafka consumers at their respective boundaries.
+5. **Reliability:** Use Outbox/Inbox for critical event flows and document retry/recovery behaviour.
+6. **Security:** Validate identity, role and resource scope in the owning service. Keep secrets out of source control and logs.
+7. **Testing:** Include unit, integration and concurrency tests for relevant business rules.
+8. **Observability:** Propagate correlation IDs and expose useful service, queue, database and Kafka metrics.
+9. **Reviewability:** Use focused commits and keep changes on the active TICKETFLOW implementation branch.
+10. **Honest reporting:** Report changed files, commands/tests run, actual results, known gaps and the next chunk. Do not claim performance or production readiness without evidence.
 
 ---
 
-### 5. Notification Service — Port 4004
-Kafka-only consumer (no HTTP API). Sends OTP, welcome and booking emails via SendGrid.
+## Project direction
 
-**Kafka — consumes:** `notification.otp-email`, `notification.welcome-email`, `booking.confirmed`, `booking.failed`, `booking.cancelled`
-**DLQ:** `dlq.notification-service`
+TICKETFLOW is being built to demonstrate practical distributed-systems engineering: inventory correctness, concurrency control, asynchronous workflows, failure recovery and measurable scalability.
 
----
-
-### 6. Booking Service — Port 4005
-Orchestrates the booking saga: locks seats in inventory, creates a payment order, waits for payment confirmation via Kafka, then confirms or rolls back.
-
-**Database:** PostgreSQL `booking_service_database` (`Booking` with saga tracking, segment bookings)
-**Gateway path:** `/api/bookings/*`
-
-| Method | Path | Auth |
-|---|---|---|
-| POST | `/bookings` | JWT |
-| GET | `/bookings` | JWT |
-| GET | `/bookings/:bookingId` | JWT |
-| POST | `/bookings/:bookingId/verify-payment` | JWT |
-| POST | `/bookings/:bookingId/cancel` | JWT |
-| GET | `/health` | — |
-
-**Kafka — produces:** `booking.confirmed`, `booking.failed`, `booking.cancelled`
-**Kafka — consumes:** `payment.success`, `payment.failed`, `admin.schedule-cancelled`
-
----
-
-### 7. Payment Service — Port 4006
-Razorpay integration. Creates payment orders, verifies signatures, processes webhooks and refunds.
-
-**Database:** PostgreSQL `payment_service_database` (models: `PaymentOrder`, `Refund`, `PaymentAuditLog`)
-**Gateway path:** `/api/payments/*`
-
-| Method | Path | Auth |
-|---|---|---|
-| POST | `/orders` | `INTERNAL_SERVICE_KEY` |
-| GET | `/orders/:paymentOrderId` | `INTERNAL_SERVICE_KEY` |
-| POST | `/orders/:paymentOrderId/verify` | `INTERNAL_SERVICE_KEY` |
-| POST | `/refunds` | `INTERNAL_SERVICE_KEY` |
-| POST | `/webhooks/razorpay` | Razorpay signature (raw body) |
-| GET | `/health` | — |
-
-**Kafka — produces:** `payment.success`, `payment.failed`
-
----
-
-### 8. Inventory Service — Port 4007
-Tracks per-schedule seat availability and segment locks. Background job expires stale locks every 60s.
-
-**Database:** PostgreSQL `inventory_service_database` (models: `ScheduleInventory`, `SeatInventory`, `RouteStop`, `SeatSegmentLock`, `IdempotencyRecord`)
-**Gateway path:** `/api/inventory/*`
-
-| Method | Path | Auth |
-|---|---|---|
-| GET | `/schedules/:scheduleId/availability` | — |
-| GET | `/schedules/:scheduleId/seats` | JWT or internal |
-| POST | `/seats/lock` | `INTERNAL_SERVICE_KEY` |
-| POST | `/seats/unlock` | `INTERNAL_SERVICE_KEY` |
-| POST | `/seats/confirm` | `INTERNAL_SERVICE_KEY` |
-| POST | `/seats/cancel-booking` | `INTERNAL_SERVICE_KEY` |
-
-**Kafka — consumes:** `admin.schedule-created`, `admin.schedule-cancelled`
-**Kafka — produces:** `inventory.seat-availability-updated`
-**DLQ:** `dlq.inventory-service`
-
----
-
-### 9. Frontend — Port 3000
-React 18 + Vite 6 + Tailwind. Auth state via Zustand, forms via React Hook Form, requests via Axios. The Vite dev server proxies `/api` to the gateway at port 4000.
-
-```bash
-cd frontend
-npm install
-npm run dev      # → http://localhost:3000
-npm run build
-npm run preview
-```
-
----
-
-## 📡 Kafka Topics
-
-All topic names live in [shared/constants/kafka-topics.js](shared/constants/kafka-topics.js).
-
-| Topic | Producer | Consumer(s) |
-|---|---|---|
-| `notification.otp-email` | user-service | notification-service |
-| `notification.welcome-email` | user-service | notification-service |
-| `admin.station-created` | admin-service | search-service |
-| `admin.train-created` | admin-service | — |
-| `admin.route-created` | admin-service | search-service |
-| `admin.schedule-created` | admin-service | inventory-service, search-service |
-| `admin.schedule-cancelled` | admin-service | inventory-service, search-service, booking-service |
-| `inventory.seat-availability-updated` | inventory-service | search-service |
-| `payment.success` | payment-service | booking-service |
-| `payment.failed` | payment-service | booking-service |
-| `booking.confirmed` | booking-service | notification-service |
-| `booking.failed` | booking-service | notification-service |
-| `booking.cancelled` | booking-service | notification-service |
-| `dlq.<service>` | each consumer on failure | (operator-driven) |
-
-Every consumer is wrapped with [shared/utils/dlqHandler.js](shared/utils/dlqHandler.js), which retries up to 3 times before publishing the failed message to the service's DLQ topic.
-
----
-
-## 📖 API Documentation
-
-You can call the backend two ways:
-
-- **Through the gateway (recommended for clients):** `http://localhost:4000/api/<service>/...`
-- **Directly to a service (for development/testing):** `http://localhost:<service-port>/...`
-
-Examples below show direct user-service calls (port 4001). Through the gateway, the same routes are exposed under `/api/users/auth/...` and `/api/users/user/...`.
-
-### Send OTP
-```http
-POST http://localhost:4001/auth/send-otp
-Content-Type: application/json
-
-{
-  "email": "user@example.com"
-}
-```
-```json
-{
-  "success": true,
-  "message": "OTP sent to email",
-  "data": { "email": "user@example.com" }
-}
-```
-
-### Verify OTP
-```http
-POST http://localhost:4001/auth/verify-otp
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "otp": "123456"
-}
-```
-
-### Login
-```http
-POST http://localhost:4001/auth/login
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "SecurePass123!"
-}
-```
-
-### Refresh access token
-```http
-POST http://localhost:4001/auth/refresh
-Cookie: refreshToken=<refresh-jwt>
-```
-
-### Get profile
-```http
-GET http://localhost:4001/user/profile
-Authorization: Bearer <access-jwt>
-```
-
-### Search trains
-```http
-GET http://localhost:4002/trains?from=NDLS&to=BCT&date=2026-05-01
-```
-
-### Create a booking
-```http
-POST http://localhost:4005/bookings
-Authorization: Bearer <access-jwt>
-Content-Type: application/json
-```
-
-A full OpenAPI / Postman collection will be added in a future update.
-
----
-
-## 🔐 Environment Variables
-
-Each service ships with a `.env.example`. Copy it to `.env` and fill in real values. **Never commit `.env`.**
-
-> Tip — generate a strong secret:
-> ```bash
-> node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-> ```
-
-### API Gateway — [api-gateway/.env.example](api-gateway/.env.example)
-```bash
-PORT=4000
-NODE_ENV=development
-
-ALLOWED_ORIGINS=http://localhost:3000
-REDIS_URL=redis://:railpass@localhost:6379
-
-JWT_ACCESS_SECRET=your_access_secret
-JWT_REFRESH_SECRET=your_refresh_secret
-ACCESS_TOKEN_EXP=15m
-REFRESH_TOKEN_EXP=7d
-ACCESS_TOKEN_EXP_SEC=900
-REFRESH_TOKEN_EXP_SEC=604800
-
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
-
-USER_SERVICE_URL=http://localhost:4001
-SEARCH_SERVICE_URL=http://localhost:4002
-BOOKING_SERVICE_URL=http://localhost:4005
-NOTIFICATION_SERVICE_URL=http://localhost:4004
-PAYMENT_SERVICE_URL=http://localhost:4006
-
-SERVICE_TIMEOUT_MS=60000
-CIRCUIT_BREAKER_THRESHOLD=5
-CIRCUIT_BREAKER_TIMEOUT=60000
-```
-
-### User Service — [user-service/.env.example](user-service/.env.example)
-```bash
-PORT=4001
-NODE_ENV=development
-LOG_LEVEL=info
-
-DATABASE_URL=postgres://admin:railpass@localhost:5432/user_service_database
-REDIS_URL=redis://:railpass@localhost:6379
-KAFKA_BROKER=localhost:9093
-
-ALLOWED_ORIGINS=http://localhost:4000,http://localhost:4001,http://localhost:4005
-
-OTP_TTL=300
-OTP_HMAC_SECRET=your_64_char_hex
-OTP_RATE_MAX_PER_HOUR=5
-OTP_MAX_VERIFY_ATTEMPTS=5
-SENDGRID_API_KEY=SG.your_key
-
-JWT_ACCESS_SECRET=your_64_char_hex
-JWT_REFRESH_SECRET=your_128_char_hex
-ACCESS_TOKEN_EXP=15m
-REFRESH_TOKEN_EXP=7d
-ACCESS_TOKEN_EXP_SEC=900
-REFRESH_TOKEN_EXP_SEC=604800
-REDIS_USER_TTL=86400
-
-INTERNAL_SERVICE_KEY=your_shared_internal_service_key
-```
-
-### Search Service — [search-service/.env.example](search-service/.env.example)
-```bash
-PORT=4002
-NODE_ENV=development
-LOG_LEVEL=info
-
-ELASTICSEARCH_URL=http://localhost:9200
-KAFKA_BROKER=localhost:9093
-KAFKA_CLIENT_ID=search-service
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:4000,http://localhost:4001
-ES_RECREATE_INDICES=true
-```
-
-### Admin Service — [admin-service/.env.example](admin-service/.env.example)
-```bash
-PORT=4003
-NODE_ENV=development
-LOG_LEVEL=info
-
-DATABASE_URL=postgres://admin:railpass@localhost:5432/admin_service_database
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:4000,http://localhost:4001,http://localhost:4003,http://localhost:4005
-
-KAFKA_BROKER=localhost:9093
-KAFKA_CLIENT_ID=admin-service
-
-INTERNAL_SERVICE_KEY=your_shared_internal_service_key
-```
-
-### Notification Service — [notification-service/.env.example](notification-service/.env.example)
-```bash
-PORT=4004
-NODE_ENV=development
-LOG_LEVEL=info
-
-ALLOWED_ORIGINS=http://localhost:4000,http://localhost:4001,http://localhost:4004
-KAFKA_BROKER=localhost:9093
-KAFKA_CLIENT_ID=notification-service
-
-SENDGRID_API_KEY=SG.your_key
-MAIL_SEND=your_sender_email
-FRONTEND_URL=http://localhost:3000/login
-```
-
-### Booking Service — [booking-service/.env.example](booking-service/.env.example)
-```bash
-PORT=4005
-NODE_ENV=development
-LOG_LEVEL=info
-
-DATABASE_URL=postgres://admin:railpass@localhost:5432/booking_service_database
-REDIS_URL=redis://:railpass@localhost:6379
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:4000
-
-KAFKA_BROKER=localhost:9093
-KAFKA_CLIENT_ID=booking-service
-
-INVENTORY_SERVICE_URL=http://localhost:4007
-PAYMENT_SERVICE_URL=http://localhost:4006
-USER_SERVICE_URL=http://localhost:4001
-ADMIN_SERVICE_URL=http://localhost:4003
-INTERNAL_SERVICE_KEY=your_shared_internal_service_key
-
-BOOKING_TTL_SECONDS=600
-BOOKING_EXPIRY_CHECK_INTERVAL_MS=30000
-LOCK_TTL_SECONDS=600
-```
-
-### Payment Service — [payment-service/.env.example](payment-service/.env.example)
-```bash
-PORT=4006
-NODE_ENV=development
-LOG_LEVEL=info
-
-DATABASE_URL=postgres://admin:railpass@localhost:5432/payment_service_database
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:4000
-
-KAFKA_BROKER=localhost:9093
-KAFKA_CLIENT_ID=payment-service
-
-INTERNAL_SERVICE_KEY=your_shared_internal_service_key
-
-PAYMENT_GATEWAY=razorpay
-RAZORPAY_KEY_ID=your_razorpay_key_id
-RAZORPAY_KEY_SECRET=your_razorpay_key_secret
-RAZORPAY_WEBHOOK_SECRET=your_razorpay_webhook_secret
-```
-
-### Inventory Service — [inventory-service/.env.example](inventory-service/.env.example)
-```bash
-PORT=4007
-NODE_ENV=development
-LOG_LEVEL=info
-
-DATABASE_URL=postgres://admin:railpass@localhost:5432/inventory_service_database
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:4000
-
-KAFKA_BROKER=localhost:9093
-KAFKA_CLIENT_ID=inventory-service
-
-LOCK_TTL_SECONDS=300
-LOCK_EXPIRY_INTERVAL_MS=60000
-
-INTERNAL_SERVICE_KEY=your_shared_internal_service_key
-```
-
-### Frontend — [frontend/.env.example](frontend/.env.example)
-```bash
-VITE_API_BASE_URL=/api
-```
-
-**🔒 Security checklist**
-- ❌ Never commit `.env` files.
-- ✅ The same `INTERNAL_SERVICE_KEY` value must be set across all services that talk to each other internally (user, admin, booking, payment, inventory, notification).
-- ✅ Use 32+ byte secrets for JWT and OTP HMAC.
-- ✅ Rotate Razorpay and SendGrid keys on every leak.
-
----
-
-## 📁 Project Structure
-
-```
-project-root/
-├── api-gateway/           # Port 4000 — entry point, JWT, rate-limit, circuit breaker
-├── user-service/          # Port 4001 — auth, OTP, JWT, profile (Postgres + Redis)
-├── search-service/        # Port 4002 — Elasticsearch-backed train/station search
-├── admin-service/         # Port 4003 — stations/trains/routes/schedules CRUD (Postgres)
-├── notification-service/  # Port 4004 — Kafka-only consumer, sends emails via SendGrid
-├── booking-service/       # Port 4005 — booking saga (Postgres + Redis)
-├── payment-service/       # Port 4006 — Razorpay orders/refunds/webhooks (Postgres)
-├── inventory-service/     # Port 4007 — per-schedule seat inventory & locks (Postgres)
-├── frontend/              # Port 3000 — React 18 + Vite 6 + Tailwind
-├── shared/                # Cross-service utilities (see below)
-│   ├── constants/
-│   │   ├── kafka-topics.js     # Single source of truth for Kafka topic names
-│   │   ├── asyncHandler.js     # Express async error wrapper
-│   │   └── error.js            # Error definitions
-│   └── utils/
-│       └── dlqHandler.js       # Kafka consumer wrapper with retry + DLQ publishing
-└── docker-compose.yml     # Postgres, pgAdmin, Redis, Zookeeper, Kafka, Kafka UI, ES, Kibana
-```
-
-Each backend service follows the same internal layout:
-
-```
-<service>/
-├── src/
-│   ├── index.js           # Server bootstrap
-│   ├── app.js             # Express app + middleware
-│   ├── config/            # Env + clients (db, redis, kafka)
-│   ├── routes/            # Route definitions
-│   ├── controllers/       # Request handlers
-│   ├── services/          # Business logic
-│   ├── middlewares/       # Auth, error, validation
-│   ├── kafka/             # Producers and consumers
-│   └── utils/             # Logger and helpers
-├── prisma/                # Schema + migrations (Prisma services only)
-├── .env.example
-└── package.json
-```
-
-
-
-
-
+The success criterion is not the number of microservices. It is a system that can reserve limited inventory correctly under contention, recover from partial failures and prove its behaviour through tests and operational measurements.
