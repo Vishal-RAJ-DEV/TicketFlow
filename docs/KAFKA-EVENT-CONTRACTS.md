@@ -1,6 +1,6 @@
 # TICKETFLOW — Kafka Event Contracts
 
-**Status:** Phase 1 architecture baseline (proposed contracts)  
+**Status:** Phase 2 — Event Service catalog topics and envelope implemented; downstream topics remain proposed  
 **Last updated:** 2026-11-21
 
 ## 1. Contract rules
@@ -32,21 +32,22 @@ All business events use this envelope:
 ~~~json
 {
   "eventId": "uuid",
-  "eventType": "payment.succeeded",
+  "eventType": "event.occurrence-published",
   "eventVersion": 1,
   "occurredAt": "2026-11-21T10:30:00.000Z",
-  "producer": "payment-service",
-  "aggregateType": "PaymentAttempt",
-  "aggregateId": "payment_attempt_123",
-  "aggregateVersion": 2,
-  "correlationId": "order_123",
-  "causationId": "event_that_triggered_this",
+  "producer": "event-service",
+  "aggregate": {
+    "type": "EVENT_OCCURRENCE",
+    "id": "occurrence_123",
+    "version": 1
+  },
   "data": {
-    "paymentAttemptId": "payment_attempt_123",
-    "orderId": "order_123",
-    "amount": "2999.00",
-    "currency": "INR",
-    "status": "CAPTURED"
+    "occurrence": {
+      "id": "occurrence_123",
+      "eventId": "event_123",
+      "venueId": "venue_123",
+      "venueLayoutVersionId": "layout_version_2"
+    }
   }
 }
 ~~~
@@ -58,11 +59,11 @@ All business events use this envelope:
 | eventVersion | Version of payload contract |
 | occurredAt | UTC time the business fact was committed/recorded |
 | producer | Owning service |
-| aggregateType / aggregateId | Entity whose state changed |
-| aggregateVersion | Monotonic aggregate version where applicable |
-| correlationId | End-to-end workflow correlation, normally orderId |
-| causationId | Event/command that caused this transition where known |
+| aggregate.type / aggregate.id | Entity whose state changed |
+| aggregate.version | Monotonic aggregate version where applicable |
 | data | Event-specific payload |
+
+The Phase 2 Event Service envelope currently emits `aggregate: { type, id, version }`. Correlation and causation identifiers should be added by a service when it has a real workflow context; do not emit fabricated values.
 
 Retries keep the same eventId. Kafka may deliver the same message more than once; Inbox deduplication uses this stable ID.
 
@@ -72,11 +73,11 @@ This is the proposed first contract set. Partition count, replication factor and
 
 | Topic | Producer | Main consumers | Suggested key | Purpose |
 |---|---|---|---|---|
-| catalog.event-published | Event | Search | eventId | Event becomes discoverable |
-| catalog.event-updated | Event | Search | eventId | Search metadata changes |
-| catalog.occurrence-published | Event | Inventory, Search, Queue | occurrenceId | Materialize occurrence/open discovery |
-| catalog.occurrence-updated | Event | Inventory, Search | occurrenceId | Versioned schedule/config update |
-| catalog.occurrence-cancelled | Event | Inventory, Order, Ticket, Search, Notification | occurrenceId | Stop sales/coordinated cancellation |
+| event.published | Event Service | Search | eventId | Event becomes discoverable |
+| event.updated | Event Service | Search | eventId | Published event metadata changes |
+| event.cancelled | Event Service | Inventory, Order, Ticket, Search, Notification | eventId | Stop sales/coordinated cancellation |
+| event.occurrence-published | Event Service | Inventory, Search, Queue | occurrenceId | Materialize published occurrence configuration |
+| venue.layout-version-published | Event Service | Inventory | layoutVersionId | Publish immutable venue layout snapshot |
 | inventory.hold-created | Inventory | Order, Analytics | orderId | Hold committed |
 | inventory.hold-confirmed | Inventory | Order, Analytics | orderId | Hold became sale |
 | inventory.hold-released | Inventory | Order, Analytics | orderId | Active hold released |
@@ -101,47 +102,96 @@ Queue-position changes should not be published individually to Kafka; this creat
 
 The following are event-specific data bodies; each is wrapped in the standard envelope.
 
-### catalog.occurrence-published
+### event.published
+
+The payload is the published event catalog record. It includes the event ID, organizer ID, title, slug, descriptive metadata, category, media URLs and publication timestamp. The aggregate key is the event ID.
+
+### event.updated
+
+Published event metadata was changed. Consumers use the aggregate version to reject stale updates and rebuild their event projection from the payload.
+
+### event.cancelled
+
+The organizer cancelled the event. The current Event Service payload includes the event ID, slug, cancellation reason and the IDs of occurrences cancelled in the same local transaction. Downstream consumers must stop new sale activity and run their own order/ticket compensation policies.
+
+### venue.layout-version-published
+
+The payload includes venue metadata and a \`layoutVersion\` object containing its ID, version, publication timestamp and immutable snapshot. The snapshot contains active section IDs/names/modes and the seats belonging to assigned sections.
+
+### event.occurrence-published
+
+The Phase 2 Event Service emits this payload when an occurrence transitions from DRAFT to SCHEDULED or ON_SALE:
 
 ~~~json
 {
-  "occurrenceId": "occ_123",
-  "eventId": "event_123",
-  "venueId": "venue_123",
-  "startsAt": "2026-12-15T12:30:00.000Z",
-  "endsAt": "2026-12-15T16:30:00.000Z",
-  "venueTimezone": "Asia/Kolkata",
-  "layoutVersion": 4,
-  "salesOpenAt": "2026-11-25T04:30:00.000Z",
-  "salesCloseAt": "2026-12-15T11:30:00.000Z",
-  "sections": [
-    {
-      "sectionId": "section_a",
-      "name": "Lower Bowl",
-      "mode": "ASSIGNED",
-      "seats": [
-        { "venueSeatId": "seat_a_10", "rowLabel": "A", "seatLabel": "10" }
+  "occurrence": {
+    "id": "occ_123",
+    "eventId": "event_123",
+    "venueId": "venue_123",
+    "venueLayoutVersionId": "layout_version_2",
+    "startsAt": "2026-12-15T12:30:00.000Z",
+    "endsAt": "2026-12-15T16:30:00.000Z",
+    "salesOpenAt": "2026-11-25T04:30:00.000Z",
+    "salesCloseAt": "2026-12-15T11:30:00.000Z",
+    "status": "SCHEDULED",
+    "version": 1
+  },
+  "event": {
+    "id": "event_123",
+    "organizerId": "organizer_123",
+    "title": "Live Music Festival",
+    "slug": "live-music-festival",
+    "category": "MUSIC"
+  },
+  "venue": {
+    "id": "venue_123",
+    "name": "City Arena",
+    "city": "Delhi",
+    "timezone": "Asia/Kolkata"
+  },
+  "layoutVersion": {
+    "id": "layout_version_2",
+    "version": 2,
+    "snapshot": {
+      "schemaVersion": 1,
+      "venueId": "venue_123",
+      "layoutVersionId": "layout_version_2",
+      "version": 2,
+      "sections": [
+        {
+          "id": "section_a",
+          "name": "Lower Bowl",
+          "mode": "ASSIGNED",
+          "seats": [
+            { "id": "seat_a_10", "rowLabel": "A", "seatLabel": "10", "x": 10, "y": 20 }
+          ]
+        }
       ]
     }
-  ],
+  },
   "ticketTypes": [
     {
-      "ticketTypeId": "vip_123",
-      "code": "VIP",
+      "id": "vip_123",
+      "occurrenceId": "occ_123",
       "name": "VIP",
+      "code": "VIP",
       "mode": "ASSIGNED",
-      "price": "2999.00",
+      "priceMinorUnits": "299900",
       "currency": "INR",
+      "capacity": null,
+      "minPerOrder": 1,
       "maxPerOrder": 6,
       "salesStartsAt": "2026-11-25T04:30:00.000Z",
       "salesEndsAt": "2026-12-15T11:30:00.000Z",
-      "allowedSectionIds": ["section_a"]
+      "status": "ACTIVE",
+      "version": 1,
+      "sectionIds": ["section_a"]
     }
   ]
 }
 ~~~
 
-Inventory Service stores source aggregate version and layoutVersion. Duplicate event IDs are ignored. Older versions must not overwrite newer configuration. After sales start, layout changes require explicit migration policy; the consumer must not silently delete sold/held seats.
+Inventory Service must store the source occurrence version and layout version. Duplicate event IDs are ignored. Older versions must not overwrite newer configuration. After sales start, layout changes require an explicit migration policy; the consumer must not silently delete sold/held seats.
 
 ### inventory.hold-created
 

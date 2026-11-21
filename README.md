@@ -135,7 +135,7 @@ flowchart TB
 | API Gateway | 4000 | Routing, authentication enforcement, rate limiting and circuit breakers | Redis for rate-limit state |
 | User Service | 4001 | Identity, OTP, OAuth, tokens and user profile | PostgreSQL: `user_db` |
 | Search Service | 4002 | Event discovery and search projections | Elasticsearch |
-| Event Service | 4003 | Organizers, events, venues, layouts, occurrences and ticket types | PostgreSQL: `event_db` |
+| Event Service | 4003 | Organizers, events, venues, layouts, occurrences and ticket types | PostgreSQL: `event_service_database` |
 | Notification Service | 4004 | Email delivery, templates and retries | PostgreSQL: `notification_db` |
 | Order Service | 4005 | Purchase lifecycle, Saga orchestration and recovery | PostgreSQL: `order_db` |
 | Payment Service | 4006 | Payment attempts, verified webhooks, refunds and audit | PostgreSQL: `payment_db` |
@@ -295,7 +295,7 @@ The following architecture documents are available:
 
 | Tool | Recommended requirement |
 |---|---|
-| Node.js | 18 or newer |
+| Node.js | 22 or newer (Event Service / Prisma 7) |
 | npm | 9 or newer |
 | Docker | 20 or newer |
 | Docker Compose | Compose v2 |

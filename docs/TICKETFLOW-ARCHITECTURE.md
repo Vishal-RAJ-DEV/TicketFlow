@@ -1,6 +1,6 @@
 # TICKETFLOW — System Architecture
 
-**Status:** Phase 1 architecture baseline (proposed target state)  
+**Status:** Target architecture baseline; Event Service implementation is in Phase 2  
 **Repository:** Vishal-RAJ-DEV/TicketFlow  
 **Last updated:** 2026-11-21  
 **Scope:** Architecture/documentation only. Target application services are not yet implemented by this document.
@@ -115,7 +115,7 @@ TRIVIO remains in its own repository. This TicketFlow repository contains the im
 |---|---|---|
 | api-gateway | API Gateway | Retain foundation; update routes/access policy |
 | user-service | User Service | Retain authentication foundation |
-| admin-service | Event Service | Rewrite railway entities as organizer/event/venue/occurrence |
+| admin-service | Event Service | Implemented in Phase 2 under `event-service/`, reusing the Express/Prisma/Kafka foundation and replacing railway entities |
 | search-service | Search Service | Retain Elasticsearch integration patterns; rebuild event projection |
 | booking-service | Order Service | Retain Saga/idempotency/CAS patterns; rewrite booking domain |
 | inventory-service | Inventory Service | Retain transaction/concurrency foundations; replace schedule/segment logic |

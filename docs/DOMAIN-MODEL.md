@@ -1,6 +1,6 @@
 # TICKETFLOW — Domain Model and Business Rules
 
-**Status:** Phase 1 architecture baseline (proposed target state)  
+**Status:** Phase 2 — Event Service domain entities implemented; Inventory/Order/Payment/Ticket/Queue remain target model  
 **Last updated:** 2026-11-21
 
 ## 1. Purpose
@@ -17,7 +17,7 @@ This document defines product vocabulary, business entities, ownership boundarie
 | Gate operator | Staff validating entry | Scan tickets only for assigned events/venues |
 | Platform operator | Trusted support/operations role | Investigate exceptions, replay DLQ, reconcile payments, audited intervention |
 
-User Service owns authentication identity. Event Service owns organizer membership and roles. Gate permissions are event/venue-scoped. A customer role in a JWT does not grant organizer or gate access.
+User Service owns authentication identity. Event Service owns organizer membership and roles. The implemented schema is in `event-service/prisma/schema.prisma` and its migration directory. Gate permissions are event/venue-scoped. A customer role in a JWT does not grant organizer or gate access.
 
 ## 3. Ubiquitous language
 

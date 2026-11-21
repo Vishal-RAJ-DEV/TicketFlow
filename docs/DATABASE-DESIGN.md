@@ -1,8 +1,8 @@
 # TICKETFLOW — Database Design and Data Ownership
 
-**Status:** Phase 1 architecture baseline (proposed target state)  
+**Status:** Phase 2 — Event Service schema implemented; remaining service schemas are design references  
 **Last updated:** 2026-11-21  
-**Important:** Schemas are design references for later implementation, not applied Prisma migrations. Review them against the exact Prisma version, generator configuration and database naming conventions during implementation.
+**Important:** The Event Service's applied schema and migration are maintained in `event-service/prisma/schema.prisma` and `event-service/prisma/migrations/`. Inventory, Order, Payment, Ticket and Notification schemas below remain design references until their implementation phases.
 
 ## 1. Persistence strategy
 
@@ -46,182 +46,23 @@ Do not share Prisma clients or database credentials between services. Cross-serv
 - Add SQL CHECK constraints through migrations for quantity, capacity and non-negative financial invariants where needed.
 - Use explicit status/soft deletion for records referenced by financial or ticket audit. Do not cascade-delete paid orders, payments, tickets or scan history.
 
-## 4. Event Service schema reference (event_db)
+## 4. Event Service schema (event_service_database)
 
-Event Service owns organizer and catalog configuration. Occurrence is the unit of sale.
+**Implemented in Phase 2.** The current Prisma schema and migration are the source of truth:
 
-~~~prisma
-enum EventStatus {
-  DRAFT
-  PUBLISHED
-  CANCELLED
-  COMPLETED
-}
+- \`event-service/prisma/schema.prisma\`
+- \`event-service/prisma/migrations/20261121140000_event_service_init/migration.sql\`
 
-enum OccurrenceStatus {
-  DRAFT
-  SCHEDULED
-  ON_SALE
-  SALES_CLOSED
-  CANCELLED
-  COMPLETED
-}
+The implementation includes Organizer, OrganizerMember, Venue, VenueLayoutVersion, VenueSection, VenueSeat, Event, EventOccurrence, TicketType, TicketTypeSection and OutboxEvent.
 
-enum InventoryMode {
-  ASSIGNED
-  GENERAL_ADMISSION
-}
+Implementation decisions that differ from the original conceptual sketch:
 
-enum TicketTypeStatus {
-  DRAFT
-  ACTIVE
-  PAUSED
-  SALES_CLOSED
-}
-
-model Organizer {
-  id        String   @id @default(uuid())
-  name      String
-  ownerId   String
-  status    String   @default("ACTIVE")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  members OrganizerMember[]
-  events  Event[]
-}
-
-model OrganizerMember {
-  id          String @id @default(uuid())
-  organizerId String
-  userId      String
-  role        String
-
-  organizer Organizer @relation(fields: [organizerId], references: [id])
-
-  @@unique([organizerId, userId])
-  @@index([userId])
-}
-
-model Venue {
-  id        String   @id @default(uuid())
-  name      String
-  city      String
-  timezone  String
-  address   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  sections    VenueSection[]
-  occurrences EventOccurrence[]
-}
-
-model VenueSection {
-  id         String        @id @default(uuid())
-  venueId    String
-  name       String
-  mode       InventoryMode
-
-  venue      Venue @relation(fields: [venueId], references: [id])
-  seats      VenueSeat[]
-  ticketTypes TicketTypeSection[]
-
-  @@unique([venueId, name])
-}
-
-model VenueSeat {
-  id        String @id @default(uuid())
-  sectionId String
-  rowLabel  String
-  seatLabel String
-  x         Float?
-  y         Float?
-
-  section VenueSection @relation(fields: [sectionId], references: [id])
-
-  @@unique([sectionId, rowLabel, seatLabel])
-}
-
-model Event {
-  id          String      @id @default(uuid())
-  organizerId String
-  title       String
-  slug        String      @unique
-  description String?
-  category    String
-  status      EventStatus @default(DRAFT)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  organizer   Organizer         @relation(fields: [organizerId], references: [id])
-  occurrences EventOccurrence[]
-
-  @@index([organizerId, status])
-  @@index([category, status])
-}
-
-model EventOccurrence {
-  id            String           @id @default(uuid())
-  eventId       String
-  venueId       String
-  startsAt      DateTime
-  endsAt        DateTime
-  salesOpenAt   DateTime
-  salesCloseAt  DateTime
-  status        OccurrenceStatus @default(DRAFT)
-  layoutVersion Int              @default(1)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-
-  event       Event       @relation(fields: [eventId], references: [id])
-  venue       Venue       @relation(fields: [venueId], references: [id])
-  ticketTypes TicketType[]
-
-  @@unique([eventId, startsAt])
-  @@index([venueId, startsAt])
-  @@index([status, salesOpenAt])
-}
-
-model TicketType {
-  id            String           @id @default(uuid())
-  occurrenceId  String
-  name          String
-  code          String
-  mode          InventoryMode
-  price         Decimal          @db.Decimal(12, 2)
-  currency      String           @default("INR")
-  minPerOrder   Int              @default(1)
-  maxPerOrder   Int              @default(6)
-  salesStartsAt DateTime
-  salesEndsAt   DateTime
-  status        TicketTypeStatus @default(ACTIVE)
-
-  occurrence EventOccurrence  @relation(fields: [occurrenceId], references: [id])
-  sections   TicketTypeSection[]
-
-  @@unique([occurrenceId, code])
-  @@index([occurrenceId, status])
-}
-
-model TicketTypeSection {
-  id             String @id @default(uuid())
-  ticketTypeId   String
-  venueSectionId String
-
-  ticketType   TicketType   @relation(fields: [ticketTypeId], references: [id])
-  venueSection VenueSection @relation(fields: [venueSectionId], references: [id])
-
-  @@unique([ticketTypeId, venueSectionId])
-  @@index([venueSectionId])
-}
-~~~
-
-Notes:
-- Organizer ownerId and member userId refer to User Service IDs, not cross-database relations.
-- TicketType belongs to an occurrence, allowing different pricing across tour dates.
-- Validate ASSIGNED types have eligible assigned sections and GA types map to GA capacity sections.
-- Store all event/sales times as UTC instants; timezone is for display/input interpretation.
-- Add layout versioning and explicit post-publication change rules.
+- Prices are stored as PostgreSQL \`BIGINT\` integer minor units (\`priceMinorUnits\`), not floating-point or decimal currency. API output serializes the value as an integer string.
+- Venue layout versions store an immutable JSON snapshot of active sections and seats at publication time. Occurrences reference the published version they were configured against.
+- Occurrence and ticket sales times use timezone-aware PostgreSQL timestamps. API inputs require ISO-8601 date-times with an explicit timezone offset.
+- User and organizer-member IDs are scalar references to User Service identity records; there are no cross-database foreign keys.
+- The Event Service owns configuration and pricing. Inventory Service will materialize this data and own runtime availability in its own database.
+- Critical event publication and layout publication write an OutboxEvent in the same local database transaction.
 
 ## 5. Inventory Service schema reference (inventory_db)
 

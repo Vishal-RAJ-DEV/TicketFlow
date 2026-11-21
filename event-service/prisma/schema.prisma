@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrganizerStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum OrganizerRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum VenueStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VenueLayoutVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum InventoryMode {
+  ASSIGNED
+  GENERAL_ADMISSION
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+enum OccurrenceStatus {
+  DRAFT
+  SCHEDULED
+  ON_SALE
+  SALES_CLOSED
+  CANCELLED
+  COMPLETED
+}
+
+enum TicketTypeStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  SALES_CLOSED
+  ARCHIVED
+}
+
+model Organizer {
+  id           String          @id @default(uuid())
+  name         String
+  slug         String          @unique
+  description  String?
+  contactEmail String?
+  websiteUrl   String?
+  ownerId      String
+  status       OrganizerStatus @default(ACTIVE)
+  createdAt    DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime        @updatedAt @db.Timestamptz(3)
+
+  members OrganizerMember[]
+  venues  Venue[]
+  events  Event[]
+
+  @@index([ownerId])
+  @@index([status, createdAt])
+  @@map("organizers")
+}
+
+model OrganizerMember {
+  id          String        @id @default(uuid())
+  organizerId String
+  userId      String
+  role        OrganizerRole @default(VIEWER)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+
+  organizer Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@unique([organizerId, userId])
+  @@index([userId])
+  @@map("organizer_members")
+}
+
+model Venue {
+  id          String      @id @default(uuid())
+  organizerId String
+  name        String
+  address     String
+  city        String
+  state       String?
+  country     String      @default("India")
+  postalCode  String?
+  timezone    String      @default("Asia/Kolkata")
+  description String?
+  status      VenueStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+
+  organizer      Organizer            @relation(fields: [organizerId], references: [id], onDelete: Restrict)
+  sections       VenueSection[]
+  layoutVersions VenueLayoutVersion[]
+  occurrences    EventOccurrence[]
+
+  @@index([organizerId, status])
+  @@index([city, name])
+  @@map("venues")
+}
+
+model VenueLayoutVersion {
+  id          String                   @id @default(uuid())
+  venueId     String
+  version     Int
+  status      VenueLayoutVersionStatus @default(DRAFT)
+  snapshot    Json?
+  createdBy   String
+  publishedAt DateTime?                @db.Timestamptz(3)
+  createdAt   DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime                 @updatedAt @db.Timestamptz(3)
+
+  venue       Venue             @relation(fields: [venueId], references: [id], onDelete: Restrict)
+  occurrences EventOccurrence[]
+
+  @@unique([venueId, version])
+  @@index([venueId, status])
+  @@map("venue_layout_versions")
+}
+
+model VenueSection {
+  id          String        @id @default(uuid())
+  venueId     String
+  name        String
+  code        String?
+  mode        InventoryMode
+  description String?
+  sortOrder   Int           @default(0)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+
+  venue       Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  seats       VenueSeat[]
+  ticketTypes TicketTypeSection[]
+
+  @@unique([venueId, name])
+  @@unique([venueId, code])
+  @@index([venueId, mode, isActive])
+  @@map("venue_sections")
+}
+
+model VenueSeat {
+  id        String   @id @default(uuid())
+  sectionId String
+  rowLabel  String
+  seatLabel String
+  x         Float?
+  y         Float?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  section VenueSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([sectionId, rowLabel, seatLabel])
+  @@index([sectionId, isActive])
+  @@map("venue_seats")
+}
+
+model Event {
+  id             String      @id @default(uuid())
+  organizerId    String
+  title          String
+  slug           String      @unique
+  description    String?
+  category       String
+  posterImageUrl String?
+  bannerImageUrl String?
+  status         EventStatus @default(DRAFT)
+  version        Int         @default(1)
+  publishedAt    DateTime?   @db.Timestamptz(3)
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
+
+  organizer   Organizer         @relation(fields: [organizerId], references: [id], onDelete: Restrict)
+  occurrences EventOccurrence[]
+
+  @@index([organizerId, status])
+  @@index([category, status])
+  @@index([status, publishedAt])
+  @@map("events")
+}
+
+model EventOccurrence {
+  id                   String           @id @default(uuid())
+  eventId              String
+  venueId              String
+  venueLayoutVersionId String
+  startsAt             DateTime         @db.Timestamptz(3)
+  endsAt               DateTime         @db.Timestamptz(3)
+  salesOpenAt          DateTime         @db.Timestamptz(3)
+  salesCloseAt         DateTime         @db.Timestamptz(3)
+  status               OccurrenceStatus @default(DRAFT)
+  version              Int              @default(1)
+  publishedAt          DateTime?        @db.Timestamptz(3)
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+
+  event         Event              @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  venue         Venue              @relation(fields: [venueId], references: [id], onDelete: Restrict)
+  layoutVersion VenueLayoutVersion @relation(fields: [venueLayoutVersionId], references: [id], onDelete: Restrict)
+  ticketTypes   TicketType[]
+
+  @@unique([eventId, startsAt])
+  @@index([venueId, startsAt])
+  @@index([status, salesOpenAt])
+  @@index([eventId, status])
+  @@map("event_occurrences")
+}
+
+model TicketType {
+  id              String           @id @default(uuid())
+  occurrenceId    String
+  name            String
+  code            String
+  description     String?
+  mode            InventoryMode
+  priceMinorUnits BigInt           @default(0)
+  currency        String           @default("INR")
+  capacity        Int?
+  minPerOrder     Int              @default(1)
+  maxPerOrder     Int              @default(6)
+  salesStartsAt   DateTime         @db.Timestamptz(3)
+  salesEndsAt     DateTime         @db.Timestamptz(3)
+  status          TicketTypeStatus @default(ACTIVE)
+  version         Int              @default(1)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+
+  occurrence EventOccurrence    @relation(fields: [occurrenceId], references: [id], onDelete: Restrict)
+  sections   TicketTypeSection[]
+
+  @@unique([occurrenceId, code])
+  @@index([occurrenceId, status])
+  @@map("ticket_types")
+}
+
+model TicketTypeSection {
+  id             String @id @default(uuid())
+  ticketTypeId   String
+  venueSectionId String
+
+  ticketType   TicketType   @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  venueSection VenueSection @relation(fields: [venueSectionId], references: [id], onDelete: Restrict)
+
+  @@unique([ticketTypeId, venueSectionId])
+  @@index([venueSectionId])
+  @@map("ticket_type_sections")
+}
+
+model OutboxEvent {
+  id               String    @id @default(uuid())
+  aggregateType    String
+  aggregateId      String
+  aggregateVersion Int
+  eventType        String
+  eventVersion     Int       @default(1)
+  payload          Json
+  publishedAt      DateTime? @db.Timestamptz(3)
+  attempts         Int       @default(0)
+  nextAttemptAt    DateTime  @default(now()) @db.Timestamptz(3)
+  lockedAt         DateTime? @db.Timestamptz(3)
+  lockedBy         String?
+  lastError        String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([publishedAt, nextAttemptAt])
+  @@index([aggregateId, aggregateVersion])
+  @@index([lockedAt])
+  @@map("outbox_events")
+}

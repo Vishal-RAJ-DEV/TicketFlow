@@ -1,0 +1,71 @@
+name: Event Service CI
+
+on:
+  pull_request:
+    paths:
+      - 'event-service/**'
+      - 'api-gateway/src/**'
+      - 'api-gateway/.env.example'
+      - 'shared/constants/kafka-topics.js'
+      - 'docker-compose.yml'
+      - 'docs/EVENT-SERVICE.md'
+      - 'docs/KAFKA-EVENT-CONTRACTS.md'
+      - '.github/workflows/event-service.yml'
+  push:
+    branches:
+      - main
+      - 'phase-2/**'
+    paths:
+      - 'event-service/**'
+      - 'api-gateway/src/**'
+      - 'api-gateway/.env.example'
+      - 'shared/constants/kafka-topics.js'
+      - 'docker-compose.yml'
+      - 'docs/EVENT-SERVICE.md'
+      - 'docs/KAFKA-EVENT-CONTRACTS.md'
+      - '.github/workflows/event-service.yml'
+
+jobs:
+  event-service:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: event_service_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d event_service_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: event-service
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/event_service_ci
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: event-service/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate Prisma schema
+        run: npx prisma validate
+      - name: Apply PostgreSQL migrations
+        run: npx prisma migrate deploy
+      - name: Check JavaScript syntax
+        run: |
+          while IFS= read -r file; do
+            node --check "$file"
+          done < <(find src test -type f -name '*.js' -print)
+      - name: Run unit tests
+        run: npm test
