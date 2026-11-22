@@ -1,16 +1,16 @@
-name: railway-booking-platform
+name: ticketflow
 
 services:
   postgres:
     image: postgres:15
-    container_name: postgres
-    restart: always
+    container_name: ticketflow-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: railpass
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-postgres-password}
       POSTGRES_DB: postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -20,58 +20,59 @@ services:
       timeout: 5s
       retries: 20
     networks:
-      - railway-booking-network
-  
-  pgadmin: 
+      - ticketflow-network
+
+  pgadmin:
     image: dpage/pgadmin4
-    container_name: pgadmin
+    container_name: ticketflow-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@localhost}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-local-dev-pgadmin-password}
     ports:
-      - "8081:80"
+      - "127.0.0.1:8081:80"
     depends_on:
       - postgres
     networks:
-      - railway-booking-network
+      - ticketflow-network
 
   redis:
     image: redis/redis-stack:6.2.6-v19
-    container_name: redis
-    restart: always
+    container_name: ticketflow-redis
+    restart: unless-stopped
     environment:
-      REDIS_ARGS: "--requirepass railpass"
+      REDIS_ARGS: "--requirepass ${REDIS_PASSWORD:-local-dev-redis-password}"
     ports:
-      - "6379:6379"
-      - "8001:8001"
+      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:8001:8001"
     volumes:
       - redis_data:/data
     networks:
-      - railway-booking-network
+      - ticketflow-network
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    container_name: zookeeper
-    restart: always
+    container_name: ticketflow-zookeeper
+    restart: unless-stopped
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "2181:2181"
+      - "127.0.0.1:2181:2181"
     volumes:
       - zookeeper_data:/var/lib/zookeeper/data
       - zookeeper_logs:/var/lib/zookeeper/log
     networks:
-      - railway-booking-network
+      - ticketflow-network
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka
-    restart: always
+    container_name: ticketflow-kafka
+    restart: unless-stopped
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
-      - "9093:9093"
+      - "127.0.0.1:9092:9092"
+      - "127.0.0.1:9093:9093"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -90,50 +91,51 @@ services:
       timeout: 10s
       retries: 20
     networks:
-      - railway-booking-network
+      - ticketflow-network
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    restart: always
+    container_name: ticketflow-kafka-ui
+    restart: unless-stopped
     depends_on:
       - kafka
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
-      KAFKA_CLUSTERS_0_NAME: railway-booking-cluster
+      KAFKA_CLUSTERS_0_NAME: ticketflow-cluster
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
     networks:
-      - railway-booking-network
-  
+      - ticketflow-network
+
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
-    container_name: elasticsearch
-    restart: always
+    container_name: ticketflow-elasticsearch
+    restart: unless-stopped
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
     networks:
-      - railway-booking-network
+      - ticketflow-network
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.12.0
-    container_name: kibana
-    restart: always
+    container_name: ticketflow-kibana
+    restart: unless-stopped
     depends_on:
       - elasticsearch
     ports:
-      - "5601:5601"
+      - "127.0.0.1:5601:5601"
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
     networks:
-      - railway-booking-network
+      - ticketflow-network
+
   event-service:
     build:
       context: .
@@ -144,7 +146,8 @@ services:
       PORT: 4003
       NODE_ENV: development
       LOG_LEVEL: info
-      DATABASE_URL: postgres://admin:railpass@postgres:5432/event_service_database
+      DATABASE_URL: postgres://admin:${POSTGRES_PASSWORD:-local-dev-postgres-password}@postgres:5432/event_service_database
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:?Set GATEWAY_ASSERTION_SECRET in the repository .env file}
       KAFKA_BROKER: kafka:9092
       KAFKA_CLIENT_ID: event-service
       ALLOWED_ORIGINS: http://localhost:3000,http://localhost:4000
@@ -159,7 +162,7 @@ services:
     ports:
       - "127.0.0.1:4003:4003"
     networks:
-      - railway-booking-network
+      - ticketflow-network
 
 volumes:
   postgres_data:
@@ -170,5 +173,5 @@ volumes:
   es_data:
 
 networks:
-  railway-booking-network:
+  ticketflow-network:
     driver: bridge

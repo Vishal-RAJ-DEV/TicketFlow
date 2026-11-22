@@ -1,7 +1,7 @@
 # TICKETFLOW — Database Design and Data Ownership
 
 **Status:** Phase 2 — Event Service schema implemented; remaining service schemas are design references  
-**Last updated:** 2026-11-21  
+**Last updated:** 2026-11-22  
 **Important:** The Event Service's applied schema and migration are maintained in `event-service/prisma/schema.prisma` and `event-service/prisma/migrations/`. Inventory, Order, Payment, Ticket and Notification schemas below remain design references until their implementation phases.
 
 ## 1. Persistence strategy
@@ -53,14 +53,18 @@ Do not share Prisma clients or database credentials between services. Cross-serv
 - \`event-service/prisma/schema.prisma\`
 - \`event-service/prisma/migrations/20261121140000_event_service_init/migration.sql\`
 
-The implementation includes Organizer, OrganizerMember, Venue, VenueLayoutVersion, VenueSection, VenueSeat, Event, EventOccurrence, TicketType, TicketTypeSection and OutboxEvent.
+The implementation includes Organizer, OrganizerMember, Venue, VenueLayoutVersion, VenueSection, VenueSeat, Event, EventOccurrence, TicketType, TicketTypeSection, OutboxEvent and GatewayRequestNonce.
 
 Implementation decisions that differ from the original conceptual sketch:
 
 - Prices are stored as PostgreSQL \`BIGINT\` integer minor units (\`priceMinorUnits\`), not floating-point or decimal currency. API output serializes the value as an integer string.
-- Venue layout versions store an immutable JSON snapshot of active sections and seats at publication time. Occurrences reference the published version they were configured against.
+- Venue layout versions store an immutable JSON snapshot of active sections, seats and GA section capacities at publication time. Occurrences reference the published version they were configured against.
+- Each GA `VenueSection` stores a positive physical `capacity`; each GA `TicketTypeSection` stores the capacity allocated by that ticket type in that section. A GA ticket type's total capacity equals the sum of its section allocations. PostgreSQL triggers serialize allocations by occurrence and reject aggregate section over-allocation, including reactivation of archived ticket types.
+- `EventOccurrence` retains Prisma's single-column layout-version relation, while a PostgreSQL trigger rejects any occurrence whose selected layout version belongs to a different venue. Ticket-type section ownership and snapshot mode/capacity are enforced in database triggers in addition to service validation.
+- Existing GA sections with no recorded section capacity are intentionally not assigned an invented physical capacity during migration. Configure a new layout version with real section capacities before publishing new occurrences against it.
 - Occurrence and ticket sales times use timezone-aware PostgreSQL timestamps. API inputs require ISO-8601 date-times with an explicit timezone offset.
 - User and organizer-member IDs are scalar references to User Service identity records; there are no cross-database foreign keys.
+- Gateway request nonces are stored in Event Service PostgreSQL with a unique primary key, so an assertion can be accepted once across replicas. Expired nonce rows are pruned after the assertion validity window.
 - The Event Service owns configuration and pricing. Inventory Service will materialize this data and own runtime availability in its own database.
 - Critical event publication and layout publication write an OutboxEvent in the same local database transaction.
 

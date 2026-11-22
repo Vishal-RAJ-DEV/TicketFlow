@@ -3,14 +3,15 @@ const { BadRequestError, ConflictError, NotFoundError } = require('../utils/erro
 const { parseDate } = require('../utils/validation');
 const { assertOrganizerAccess } = require('./organizer.service');
 const { createOutboxEvent } = require('./outbox.service');
+const { validateOccurrenceTicketAllocations } = require('../utils/gaCapacity');
 
-const getAuthorizedEvent = async (eventId, userId, roles = ['OWNER', 'ADMIN', 'EDITOR']) => {
-  const event = await prisma.event.findUnique({
+const getAuthorizedEvent = async (eventId, userId, roles = ['OWNER', 'ADMIN', 'EDITOR'], client = prisma) => {
+  const event = await client.event.findUnique({
     where: { id: eventId },
     select: { id: true, organizerId: true, status: true },
   });
   if (!event) throw new NotFoundError('Event not found');
-  await assertOrganizerAccess(prisma, event.organizerId, userId, roles);
+  await assertOrganizerAccess(client, event.organizerId, userId, roles);
   return event;
 };
 
@@ -60,7 +61,7 @@ const createOccurrence = async (eventId, userId, data) => {
   const times = validateOccurrenceTimes(data);
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM events WHERE id = ${eventId} FOR UPDATE`;
-    const event = await getAuthorizedEvent(eventId, userId);
+    const event = await getAuthorizedEvent(eventId, userId, ['OWNER', 'ADMIN', 'EDITOR'], tx);
     if (['CANCELLED', 'COMPLETED'].includes(event.status)) throw new ConflictError('Cannot add an occurrence to a cancelled or completed event');
     await tx.$queryRaw`SELECT id FROM venues WHERE id = ${venueId} FOR UPDATE`;
     const venue = await tx.venue.findFirst({ where: { id: venueId, status: 'ACTIVE' }, select: { id: true, organizerId: true } });
@@ -107,25 +108,38 @@ const getOccurrence = async (occurrenceId, userId) => {
   };
 };
 
-const updateOccurrence = async (occurrenceId, userId, data) => {
-  const occurrence = await prisma.eventOccurrence.findUnique({
+const updateOccurrence = async (occurrenceId, userId, data) => prisma.$transaction(async (tx) => {
+  // Use one lock order for every occurrence mutation: occurrence first, then venue.
+  await tx.$queryRaw`SELECT id FROM event_occurrences WHERE id = ${occurrenceId} FOR UPDATE`;
+  const occurrence = await tx.eventOccurrence.findUnique({
     where: { id: occurrenceId },
-    include: { event: { select: { organizerId: true } }, _count: { select: { ticketTypes: true } } },
+    include: { event: { select: { organizerId: true } } },
   });
   if (!occurrence) throw new NotFoundError('Event occurrence not found');
-  await assertOrganizerAccess(prisma, occurrence.event.organizerId, userId, ['OWNER', 'ADMIN', 'EDITOR']);
+  await assertOrganizerAccess(tx, occurrence.event.organizerId, userId, ['OWNER', 'ADMIN', 'EDITOR']);
   if (occurrence.status !== 'DRAFT') {
     throw new ConflictError('Only draft occurrences can be edited');
   }
 
   const update = validateOccurrenceTimes(data, occurrence);
   if (data.venueId !== undefined || data.venueLayoutVersionId !== undefined) {
-    if (occurrence._count.ticketTypes > 0) {
-      throw new ConflictError('Remove ticket types before changing the venue or layout version');
-    }
     const venueId = data.venueId || occurrence.venueId;
     const layoutVersionId = data.venueLayoutVersionId || occurrence.venueLayoutVersionId;
-    const layout = await prisma.venueLayoutVersion.findFirst({
+    const venueChanged = venueId !== occurrence.venueId;
+    const layoutChanged = layoutVersionId !== occurrence.venueLayoutVersionId;
+    if (venueChanged || layoutChanged) {
+      const ticketTypeCount = await tx.ticketType.count({ where: { occurrenceId } });
+      const activeTicketTypeCount = await tx.ticketType.count({
+        where: { occurrenceId, status: { not: 'ARCHIVED' } },
+      });
+      if (venueChanged && ticketTypeCount > 0) {
+        throw new ConflictError('Archive or remove every ticket type before changing the occurrence venue');
+      }
+      if (layoutChanged && activeTicketTypeCount > 0) {
+        throw new ConflictError('Archive every ticket type before switching to a new immutable layout version');
+      }
+    }
+    const layout = await tx.venueLayoutVersion.findFirst({
       where: {
         id: layoutVersionId,
         venueId,
@@ -140,25 +154,23 @@ const updateOccurrence = async (occurrenceId, userId, data) => {
   }
 
   const venueId = update.venueId || occurrence.venueId;
-  return prisma.$transaction(async (tx) => {
-    await lockVenueSchedule(tx, venueId);
-    await assertNoVenueScheduleConflict(tx, {
-      venueId,
-      startsAt: update.startsAt,
-      endsAt: update.endsAt,
-      excludeOccurrenceId: occurrenceId,
-    });
-
-    const changed = await tx.eventOccurrence.updateMany({
-      where: { id: occurrenceId, status: 'DRAFT', version: occurrence.version },
-      data: { ...update, version: { increment: 1 } },
-    });
-    if (!changed.count) {
-      throw new ConflictError('Occurrence was modified by another request; reload it and retry');
-    }
-    return tx.eventOccurrence.findUnique({ where: { id: occurrenceId } });
+  await lockVenueSchedule(tx, venueId);
+  await assertNoVenueScheduleConflict(tx, {
+    venueId,
+    startsAt: update.startsAt,
+    endsAt: update.endsAt,
+    excludeOccurrenceId: occurrenceId,
   });
-};
+
+  const changed = await tx.eventOccurrence.updateMany({
+    where: { id: occurrenceId, status: 'DRAFT', version: occurrence.version },
+    data: { ...update, version: { increment: 1 } },
+  });
+  if (!changed.count) {
+    throw new ConflictError('Occurrence was modified by another request; reload it and retry');
+  }
+  return tx.eventOccurrence.findUnique({ where: { id: occurrenceId } });
+});
 
 const publishOccurrence = async (occurrenceId, userId) => {
   const initial = await prisma.eventOccurrence.findUnique({ where: { id: occurrenceId }, include: { event: { select: { organizerId: true } } } });
@@ -166,7 +178,7 @@ const publishOccurrence = async (occurrenceId, userId) => {
   await assertOrganizerAccess(prisma, initial.event.organizerId, userId, ['OWNER', 'ADMIN', 'EDITOR']);
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM event_occurrences WHERE id = ${occurrenceId} FOR UPDATE`;
-    const occurrence = await tx.eventOccurrence.findUnique({
+    let occurrence = await tx.eventOccurrence.findUnique({
       where: { id: occurrenceId },
       include: {
         event: true,
@@ -176,6 +188,11 @@ const publishOccurrence = async (occurrenceId, userId) => {
       },
     });
     if (!occurrence) throw new NotFoundError('Event occurrence not found');
+    // Serialize publication against venue metadata changes and re-read after acquiring the venue lock.
+    await tx.$queryRaw`SELECT id FROM venues WHERE id = ${occurrence.venueId} FOR UPDATE`;
+    const currentVenue = await tx.venue.findUnique({ where: { id: occurrence.venueId } });
+    if (!currentVenue) throw new NotFoundError('Occurrence venue not found');
+    occurrence = { ...occurrence, venue: currentVenue };
     await assertOrganizerAccess(tx, occurrence.event.organizerId, userId, ['OWNER', 'ADMIN', 'EDITOR']);
     if (occurrence.status !== 'DRAFT') {
       if (['SCHEDULED', 'ON_SALE', 'SALES_CLOSED'].includes(occurrence.status)) return occurrence;
@@ -186,6 +203,8 @@ const publishOccurrence = async (occurrenceId, userId) => {
     if (occurrence.venue.organizerId !== occurrence.event.organizerId) throw new ConflictError('The occurrence venue must belong to the event organizer');
     if (occurrence.layoutVersion.status !== 'PUBLISHED' || !occurrence.layoutVersion.snapshot) throw new ConflictError('The selected venue layout is not published');
     if (!occurrence.ticketTypes.length) throw new BadRequestError('At least one active ticket type is required before publishing an occurrence');
+
+    validateOccurrenceTicketAllocations(occurrence.ticketTypes, occurrence.layoutVersion.snapshot.sections || []);
     const now = new Date();
     if (occurrence.startsAt <= now || occurrence.salesCloseAt <= now) throw new BadRequestError('An occurrence cannot be published after its start or sales-close time');
     for (const ticketType of occurrence.ticketTypes) {
@@ -233,6 +252,7 @@ const publishOccurrence = async (occurrenceId, userId) => {
         status: ticketType.status,
         version: ticketType.version,
         sectionIds: ticketType.sections.map((entry) => entry.venueSectionId),
+        sectionAllocations: ticketType.sections.map((entry) => ({ sectionId: entry.venueSectionId, capacity: entry.capacity })),
       })),
     };
     await createOutboxEvent(tx, {

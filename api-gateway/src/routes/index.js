@@ -71,7 +71,7 @@ router.delete(
      userServiceProxy
 )
 
-const eventServiceProxy = createProxy('eventService', config.SERVICES.EVENT_SERVICE_URL);
+const eventServiceProxy = createProxy('eventService', config.SERVICES.EVENT_SERVICE_URL, { gatewayAssertion: true });
 
 const eventRoute = (method, path, authenticated = true, limiter = combinedRateLimit()) => {
      const handlers = authenticated

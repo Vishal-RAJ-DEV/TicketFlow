@@ -1,5 +1,5 @@
 # ==========================================
-# Railway Booking Platform - Git Ignore Configuration
+# TICKETFLOW - Git Ignore Configuration
 # ==========================================
 
 # ============ Environment Variables ============
@@ -99,9 +99,10 @@ junit.xml
 *.db
 *.db-journal
 
-# PostgreSQL dumps
-*.sql
+# PostgreSQL dumps and backups. Keep *.sql migrations trackable.
 *.dump
+*.sql.gz
+/backups/
 
 # ============ Docker ============
 # Docker volumes and data (managed by docker-compose)

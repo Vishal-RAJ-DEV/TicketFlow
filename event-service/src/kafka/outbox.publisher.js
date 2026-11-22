@@ -35,7 +35,8 @@ const publishBatch = async () => {
       });
       logger.info('Published outbox event ' + event.eventType + ' (' + event.id + ')');
     } catch (error) {
-      const nextAttempt = Math.min(300000, 1000 * (2 ** Math.min(event.attempts, 8)));
+      const exponentialCap = Math.min(300000, 1000 * (2 ** Math.min(event.attempts, 8)));
+      const nextAttempt = Math.max(1000, Math.floor(exponentialCap * (0.5 + Math.random() * 0.5)));
       await prisma.outboxEvent.updateMany({
         where: { id: event.id, lockedBy: workerId, publishedAt: null },
         data: {

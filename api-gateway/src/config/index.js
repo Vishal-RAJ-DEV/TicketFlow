@@ -8,6 +8,7 @@ const config = {
 
      JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
      JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+     GATEWAY_ASSERTION_SECRET: process.env.GATEWAY_ASSERTION_SECRET,
      ACCESS_TOKEN_EXP: process.env.ACCESS_TOKEN_EXP,
      REFRESH_TOKEN_EXP: process.env.REFRESH_TOKEN_EXP,
      ACCESS_TOKEN_EXP_SEC: parseInt(process.env.ACCESS_TOKEN_EXP_SEC || '900', 10),
@@ -32,12 +33,16 @@ const config = {
      CIRCUIT_BREAKER_TIMEOUT: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000', 10),
 };
 
-const requiredConfig = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'];
+const requiredConfig = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'GATEWAY_ASSERTION_SECRET'];
 
 requiredConfig.forEach((key) => {
      if (!config[key]) {
           throw new Error(`Missing required environment variable: ${key}`);
      }
 });
+
+if (config.GATEWAY_ASSERTION_SECRET.length < 32) {
+     throw new Error('GATEWAY_ASSERTION_SECRET must contain at least 32 characters');
+}
 
 module.exports = { config };

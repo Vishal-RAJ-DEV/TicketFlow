@@ -1,7 +1,7 @@
 const { randomUUID } = require('crypto');
 const prisma = require('../config/prisma');
 const { BadRequestError, ForbiddenError, NotFoundError } = require('../utils/error');
-const { requireString, optionalString, slugify } = require('../utils/validation');
+const { requireString, optionalString, optionalUrl, slugify } = require('../utils/validation');
 
 const MANAGEMENT_ROLES = ['OWNER', 'ADMIN'];
 const EDIT_ROLES = ['OWNER', 'ADMIN', 'EDITOR'];
@@ -41,7 +41,7 @@ const createOrganizer = async (userId, data) => {
   const id = randomUUID();
   const slug = slugify(data.slug || name) + '-' + id.slice(0, 8);
   const contactEmail = optionalString(data.contactEmail, 'contactEmail', 254);
-  const websiteUrl = optionalString(data.websiteUrl, 'websiteUrl', 500);
+  const websiteUrl = optionalUrl(data.websiteUrl, 'websiteUrl', 500);
   if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
     throw new BadRequestError('contactEmail must be a valid email address');
   }
@@ -95,7 +95,7 @@ const updateOrganizer = async (organizerId, userId, data) => {
       throw new BadRequestError('contactEmail must be a valid email address');
     }
   }
-  if (data.websiteUrl !== undefined) update.websiteUrl = optionalString(data.websiteUrl, 'websiteUrl', 500);
+  if (data.websiteUrl !== undefined) update.websiteUrl = optionalUrl(data.websiteUrl, 'websiteUrl', 500);
   if (!Object.keys(update).length) throw new BadRequestError('No valid organizer fields were supplied');
   return prisma.organizer.update({ where: { id: organizerId }, data: update });
 };

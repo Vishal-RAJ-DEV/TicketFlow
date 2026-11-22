@@ -1,7 +1,7 @@
 # TICKETFLOW — Kafka Event Contracts
 
 **Status:** Phase 2 — Event Service catalog topics and envelope implemented; downstream topics remain proposed  
-**Last updated:** 2026-11-21
+**Last updated:** 2026-11-22
 
 ## 1. Contract rules
 
@@ -116,11 +116,11 @@ The organizer cancelled the event. The current Event Service payload includes th
 
 ### venue.layout-version-published
 
-The payload includes venue metadata and a \`layoutVersion\` object containing its ID, version, publication timestamp and immutable snapshot. The snapshot contains active section IDs/names/modes and the seats belonging to assigned sections.
+The payload includes venue metadata and a \`layoutVersion\` object containing its ID, version, publication timestamp and immutable snapshot. The snapshot contains active section IDs/names/modes, GA physical capacities and the seats belonging to assigned sections.
 
 ### event.occurrence-published
 
-The Phase 2 Event Service emits this payload when an occurrence transitions from DRAFT to SCHEDULED or ON_SALE:
+The Phase 2 Event Service emits this payload when an occurrence transitions from DRAFT to SCHEDULED or ON_SALE. The layout snapshot includes a `capacity` value for each section (null for assigned seating). Each GA ticket type includes `sectionAllocations`, with one positive allocation per eligible section; its `capacity` equals the sum of those values. For an assigned ticket type, each section allocation has a null capacity.
 
 ~~~json
 {
@@ -162,6 +162,7 @@ The Phase 2 Event Service emits this payload when an occurrence transitions from
           "id": "section_a",
           "name": "Lower Bowl",
           "mode": "ASSIGNED",
+          "capacity": null,
           "seats": [
             { "id": "seat_a_10", "rowLabel": "A", "seatLabel": "10", "x": 10, "y": 20 }
           ]
@@ -185,7 +186,8 @@ The Phase 2 Event Service emits this payload when an occurrence transitions from
       "salesEndsAt": "2026-12-15T11:30:00.000Z",
       "status": "ACTIVE",
       "version": 1,
-      "sectionIds": ["section_a"]
+      "sectionIds": ["section_a"],
+      "sectionAllocations": [{ "sectionId": "section_a", "capacity": null }]
     }
   ]
 }

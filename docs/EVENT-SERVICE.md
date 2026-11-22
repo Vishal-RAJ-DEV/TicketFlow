@@ -1,6 +1,6 @@
 # TICKETFLOW Event Service
 
-**Status:** Phase 2 implementation branch  
+**Status:** Phase 2 implemented; Phase 2.1 hardening in progress  
 **Port:** 4003  
 **Database:** `event_service_database`  
 **Runtime style:** CommonJS, Express 5, Prisma 7, PostgreSQL adapter, Winston and KafkaJS
@@ -17,7 +17,7 @@ The service follows the existing imported service conventions:
 - Winston structured service logger.
 - Prisma PostgreSQL driver adapter and one service-owned Prisma client.
 - KafkaJS producer with retries.
-- Gateway-injected `x-user-id` request context.
+- API Gateway-signed request assertions verified by Event Service.
 
 Railway-specific station, train, route and schedule models/controllers are not retained in the new Event Service domain.
 
@@ -28,7 +28,7 @@ Railway-specific station, train, route and schedule models/controllers are not r
 - `Venue` owns sections and a sequence of layout versions.
 - `VenueSection` is either `ASSIGNED` or `GENERAL_ADMISSION`.
 - `VenueSeat` belongs to an assigned section.
-- `VenueLayoutVersion` stores an immutable JSON snapshot of active sections and seats at publication time.
+- `VenueLayoutVersion` stores an immutable JSON snapshot of active sections, seats and GA section capacities at publication time.
 - `Event` belongs to an organizer and can have multiple occurrences.
 - `EventOccurrence` has one venue, one published layout version, a date/time window and its own ticket types.
 - `TicketType` belongs to one occurrence, stores a price in integer minor units, and references eligible venue sections.
@@ -54,7 +54,7 @@ New venues start with layout version 1 in `DRAFT`.
 4. The service writes `venue.layout-version-published` to the transactional outbox in the same PostgreSQL transaction.
 5. Later layout edits require creating a new draft version first. Section/seat mutation transactions lock that draft-version row, and publication takes the same lock before capturing the snapshot; the two operations cannot race. The previous version's snapshot remains unchanged.
 
-A layout cannot be published when it contains no active sections, an assigned section has no active seats, or a general-admission section has individual seats.
+A layout cannot be published when it contains no active sections, an assigned section has no active seats, a general-admission section has individual seats, or a GA section has no positive configured capacity.
 
 The relational section/seat rows represent the venue's current editable layout; the published JSON snapshot preserves the exact historic layout referenced by an occurrence. Consumers must use the snapshot and layout-version ID from the occurrence publication event rather than reading a mutable current venue map.
 
@@ -84,8 +84,9 @@ The current implementation records the initial `SCHEDULED` or `ON_SALE` state at
 
 - Ticket types are configured per occurrence, so tour dates may have different prices. Ticket-type create/update/status changes lock the occurrence row, and occurrence publication takes the same lock before reading the configuration; publication therefore emits one consistent pricing/section snapshot.
 - All ticket types for one occurrence must use the same currency.
-- `GENERAL_ADMISSION` requires a positive capacity.
-- `ASSIGNED` does not store an independent capacity; its eligible sections must contain seats.
+- `GENERAL_ADMISSION` uses explicit `sectionAllocations: [{ sectionId, capacity }]`. Each GA section has a finite capacity captured in its immutable layout snapshot.
+- A GA ticket type's `capacity` equals the sum of its per-section allocations. The combined allocations of all non-archived ticket types targeting one section cannot exceed that section's capacity.
+- `ASSIGNED` does not store an independent capacity; its eligible sections must contain seats and the ticket type has no GA capacity allocations.
 - Eligible section IDs must exist in the occurrence's published layout snapshot and match the ticket type mode.
 - `minPerOrder` and `maxPerOrder` must be positive and max cannot be lower than min.
 - Ticket-type sales windows must be contained within the occurrence sales window.
@@ -95,7 +96,7 @@ Event Service is authoritative for configured prices and sales rules. Inventory 
 
 ## 6. Organizer authorization
 
-The API Gateway validates the access token and forwards the verified `x-user-id` header. Event Service then checks ownership/membership against its own Organizer tables.
+The API Gateway validates the access token, removes caller-supplied identity/assertion headers and signs a short-lived HMAC-SHA256 assertion containing the HTTP method, downstream path/query, authenticated user ID and request-body digest. Event Service validates the timestamp and signature with constant-time comparison before setting `req.user`; organizer ownership and membership are still checked by Event Service against its own tables.
 
 | Role | Read | Edit catalog | Manage members / cancel event |
 |---|---:|---:|---:|
@@ -106,7 +107,7 @@ The API Gateway validates the access token and forwards the verified `x-user-id`
 
 Creating an organizer sets the authenticated user as its owner. The User Service remains the source of identity; organizer membership is owned here.
 
-The Event Service currently trusts identity headers supplied by the gateway, matching the existing repository pattern. Keep the service on a private application network in deployed environments; do not expose port 4003 publicly or allow untrusted clients to set `x-user-id`.
+Direct Event Service business-route calls without a valid assertion are rejected. The assertion has a 30-second clock-skew window and includes a cryptographically random nonce. Event Service records each nonce under a database uniqueness constraint, preventing replay across multiple replicas; nonce rows older than 60 seconds are pruned opportunistically. The HMAC contract is an internal trust boundary, not a substitute for network isolation: use private service networking and TLS, store the shared secret in a secret manager, rotate it, and do not expose port 4003 publicly. Plan key rotation as a coordinated Gateway/Event Service change.
 
 ## 7. API endpoints
 
@@ -161,7 +162,7 @@ Gateway route prefixes are intentionally shaped so its existing proxy strips the
 
 Each event uses the shared envelope with `eventId`, `eventType`, `eventVersion`, `occurredAt`, `producer`, `aggregate` and `data`.
 
-The source database update and outbox insert commit in one Prisma transaction. A worker claims due outbox records using PostgreSQL `FOR UPDATE SKIP LOCKED`, sends to Kafka, then marks the record published. On failure it records the error, releases the claim and schedules bounded exponential retry.
+The source database update and outbox insert commit in one Prisma transaction. A worker claims due outbox records using PostgreSQL `FOR UPDATE SKIP LOCKED`, sends to Kafka, then marks the record published. On failure it records the error, releases the claim and schedules bounded exponential retry with jitter. Delivery is at-least-once. Outbox age/attempt metrics, poison-event operator tooling and a dead-letter workflow are still operational follow-ups.
 
 Kafka delivery remains at-least-once: a process may crash after Kafka acknowledgement but before the database records `publishedAt`. Downstream consumers must deduplicate using `eventId` / Inbox records. The local Compose broker auto-creates topics for development; production topics, partitions, replication and ACLs must be provisioned explicitly.
 
@@ -191,6 +192,6 @@ The Postgres init script creates `event_service_database` on a fresh volume. If 
 
 Implemented in this phase: catalog/configuration ownership, organizer membership, venues/sections/seats, immutable layout snapshots, event/occurrence/ticket-type APIs, initial PostgreSQL migration, gateway integration and Outbox publication.
 
-Not implemented here: inventory materialization/availability, seat locking/holds, GA allocation, order/Saga, payment/refunds, Queue Service, Ticket Service, search projection and customer frontend conversion. These remain owned by later phases.
+Not implemented here: inventory materialization/availability, seat locking/holds, GA runtime shards, order/Saga, payment/refunds, Queue Service, Ticket Service, search projection and customer frontend conversion. Event Service does enforce the configured GA section-capacity allocation contract before publication; it does not track live sold/held quantities. These remain owned by later phases.
 
-The current catalog lifecycle records initial occurrence publication state. Automated scheduled status transitions and inventory enforcement remain future operational work; consumers must rely on the explicit timestamps and the authoritative Inventory Service once it is implemented.
+The current catalog lifecycle records initial occurrence publication state. Automated scheduled status transitions, individual occurrence cancellation, runtime ticket-type pause after publication and Inventory enforcement remain future work; consumers must rely on explicit timestamps and the authoritative Inventory Service once it is implemented.

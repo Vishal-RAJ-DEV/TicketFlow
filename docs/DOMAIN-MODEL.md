@@ -1,7 +1,7 @@
 # TICKETFLOW — Domain Model and Business Rules
 
 **Status:** Phase 2 — Event Service domain entities implemented; Inventory/Order/Payment/Ticket/Queue remain target model  
-**Last updated:** 2026-11-21
+**Last updated:** 2026-11-22
 
 ## 1. Purpose
 
@@ -99,8 +99,10 @@ No cross-service database foreign keys. An ID belonging to another service is a 
 - An assigned seat cannot be allocated to two active holds or two active sales for the same occurrence.
 
 ### General admission
-- A GA ticket type has finite capacity and no individually selected seat.
-- Capacity is split across GA pool shards for write distribution.
+- Every GA venue section has a declared physical capacity captured in the immutable layout snapshot.
+- A GA ticket type allocates an explicit capacity per eligible section; its ticket-type capacity is the sum of those allocations.
+- Across all non-archived ticket types for one occurrence, section allocations cannot exceed the section's physical capacity. This prevents two sale tiers from independently claiming the same standing-area capacity.
+- Inventory Service later splits each published ticket-type allocation across GA pool shards for write distribution.
 - Each shard satisfies heldQuantity >= 0, soldQuantity >= 0 and heldQuantity + soldQuantity <= capacity.
 - A request for N units allocates all N or none. Multi-shard allocation commits in one Inventory transaction.
 - Sum of shard capacities equals configured GA capacity for the ticket type.

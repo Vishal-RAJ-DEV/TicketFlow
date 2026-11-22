@@ -6,23 +6,34 @@ on:
       - 'event-service/**'
       - 'api-gateway/src/**'
       - 'api-gateway/.env.example'
-      - 'shared/constants/kafka-topics.js'
+      - 'shared/constants/**'
+      - 'shared/utils/**'
       - 'docker-compose.yml'
+      - '.env.example'
+      - 'README.md'
       - 'docs/EVENT-SERVICE.md'
       - 'docs/KAFKA-EVENT-CONTRACTS.md'
+      - 'docs/DATABASE-DESIGN.md'
+      - 'docs/DOMAIN-MODEL.md'
       - '.github/workflows/event-service.yml'
   push:
     branches:
       - main
       - 'phase-2/**'
+      - 'phase-2.1/**'
     paths:
       - 'event-service/**'
       - 'api-gateway/src/**'
       - 'api-gateway/.env.example'
-      - 'shared/constants/kafka-topics.js'
+      - 'shared/constants/**'
+      - 'shared/utils/**'
       - 'docker-compose.yml'
+      - '.env.example'
+      - 'README.md'
       - 'docs/EVENT-SERVICE.md'
       - 'docs/KAFKA-EVENT-CONTRACTS.md'
+      - 'docs/DATABASE-DESIGN.md'
+      - 'docs/DOMAIN-MODEL.md'
       - '.github/workflows/event-service.yml'
 
 jobs:
@@ -66,6 +77,14 @@ jobs:
         run: |
           while IFS= read -r file; do
             node --check "$file"
-          done < <(find src test -type f -name '*.js' -print)
+          done < <(find src test ../api-gateway/src ../shared -type f -name '*.js' -print)
       - name: Run unit tests
         run: npm test
+      - name: Validate Docker Compose configuration
+        working-directory: .
+        env:
+          GATEWAY_ASSERTION_SECRET: ci-only-gateway-secret-that-is-longer-than-32-characters
+        run: docker compose config --quiet
+      - name: Build Event Service image
+        working-directory: .
+        run: docker build -f event-service/Dockerfile -t ticketflow-event-service:ci .
