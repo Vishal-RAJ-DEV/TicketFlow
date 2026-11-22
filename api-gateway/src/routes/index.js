@@ -71,56 +71,64 @@ router.delete(
      userServiceProxy
 )
 
-const adminServiceProxy = createProxy('adminService', config.SERVICES.ADMIN_SERVICE_URL);
+const eventServiceProxy = createProxy('eventService', config.SERVICES.EVENT_SERVICE_URL);
 
-router.post(
-     '/admins/stations/station',
-     requireAuth,
-     combinedRateLimit(),
-     adminServiceProxy
-);
+const eventRoute = (method, path, authenticated = true, limiter = combinedRateLimit()) => {
+     const handlers = authenticated
+          ? [requireAuth, limiter, eventServiceProxy]
+          : [limiter, eventServiceProxy];
+     router[method](path, ...handlers);
+};
 
-router.post(
-     '/admins/trains/train',
-     requireAuth,
-     combinedRateLimit(),
-     adminServiceProxy
-);
+// Public event discovery
+eventRoute('get', '/events/catalog', false, endpointRateLimit(120, 60000));
+eventRoute('get', '/events/catalog/:slug', false, endpointRateLimit(120, 60000));
 
-router.post(
-     '/admins/trains/route',
-     requireAuth,
-     combinedRateLimit(),
-     adminServiceProxy
-)
+// Organizer management
+eventRoute('post', '/events/organizers');
+eventRoute('get', '/events/organizers');
+eventRoute('get', '/events/organizers/:organizerId');
+eventRoute('patch', '/events/organizers/:organizerId');
+eventRoute('get', '/events/organizers/:organizerId/members');
+eventRoute('put', '/events/organizers/:organizerId/members/:memberUserId');
+eventRoute('delete', '/events/organizers/:organizerId/members/:memberUserId');
 
-router.post(
-     '/admins/schedules/schedule',
-     requireAuth,
-     combinedRateLimit(),
-     adminServiceProxy
-)
+// Venue and immutable layout versions
+eventRoute('post', '/events/venues/organizers/:organizerId');
+eventRoute('get', '/events/venues/organizers/:organizerId');
+eventRoute('get', '/events/venues/:venueId');
+eventRoute('patch', '/events/venues/:venueId');
+eventRoute('post', '/events/venues/:venueId/layout-versions');
+eventRoute('get', '/events/venues/:venueId/layout-versions');
+eventRoute('post', '/events/venues/:venueId/layout-versions/:layoutVersionId/publish');
+eventRoute('post', '/events/venues/:venueId/sections');
+eventRoute('get', '/events/venues/:venueId/sections');
+eventRoute('patch', '/events/venues/:venueId/sections/:sectionId');
+eventRoute('delete', '/events/venues/:venueId/sections/:sectionId');
+eventRoute('post', '/events/venues/:venueId/sections/:sectionId/seats');
+eventRoute('patch', '/events/venues/:venueId/sections/:sectionId/seats/:seatId');
+eventRoute('delete', '/events/venues/:venueId/sections/:sectionId/seats/:seatId');
 
-router.get(
-     '/admins/stations/station',
-     requireAuth,
-     combinedRateLimit(),
-     adminServiceProxy
-)
+// Event catalog management
+eventRoute('post', '/events/events/organizers/:organizerId');
+eventRoute('get', '/events/events/organizers/:organizerId');
+eventRoute('get', '/events/events/:eventId');
+eventRoute('patch', '/events/events/:eventId');
+eventRoute('post', '/events/events/:eventId/publish');
+eventRoute('post', '/events/events/:eventId/cancel');
 
-router.get(
-     '/admins/trains/train/:trainId',
-     requireAuth,
-     combinedRateLimit(),
-     adminServiceProxy
-);
+// Occurrence and ticket configuration
+eventRoute('post', '/events/occurrences/events/:eventId');
+eventRoute('get', '/events/occurrences/events/:eventId');
+eventRoute('get', '/events/occurrences/:occurrenceId');
+eventRoute('patch', '/events/occurrences/:occurrenceId');
+eventRoute('post', '/events/occurrences/:occurrenceId/publish');
 
-router.put(
-     '/admins/schedules/schedule/:scheduleId',
-     requireAuth,
-     combinedRateLimit(),
-     adminServiceProxy
-)
+eventRoute('post', '/events/ticket-types/occurrences/:occurrenceId');
+eventRoute('get', '/events/ticket-types/occurrences/:occurrenceId');
+eventRoute('patch', '/events/ticket-types/:ticketTypeId');
+eventRoute('patch', '/events/ticket-types/:ticketTypeId/status');
+
 // ===========================
 // SEARCH SERVICE ROUTES (public - no auth required)
 // ===========================

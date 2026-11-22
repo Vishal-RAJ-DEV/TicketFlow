@@ -9,7 +9,7 @@ const KAFKA_TOPICS = {
      BOOKING_EMAIL: 'notification.booking-email',
      PAYMENT_EMAIL: 'notification.payment-email',
 
-     // Admin topics (admin-service -> inventory/search)
+     // Legacy railway catalog topics (kept until remaining consumers are migrated)
      TRAIN_CREATED: 'admin.train-created',
      STATION_CREATED: 'admin.station-created',
      ROUTE_CREATED: 'admin.route-created',
@@ -18,6 +18,13 @@ const KAFKA_TOPICS = {
      STATION_UPDATED: 'admin.station-updated',
      ROUTE_UPDATED: 'admin.route-updated',
      SCHEDULE_CANCELLED: 'admin.schedule-cancelled',
+
+     // Event Service catalog events
+     EVENT_PUBLISHED: 'event.published',
+     EVENT_UPDATED: 'event.updated',
+     EVENT_CANCELLED: 'event.cancelled',
+     EVENT_OCCURRENCE_PUBLISHED: 'event.occurrence-published',
+     VENUE_LAYOUT_VERSION_PUBLISHED: 'venue.layout-version-published',
 
      // Inventory topics (inventory-service -> search-service)
      SEAT_AVAILABILITY_UPDATED: 'inventory.seat-availability-updated',
