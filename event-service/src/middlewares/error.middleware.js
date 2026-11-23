@@ -22,6 +22,7 @@ module.exports = (error, req, res, next) => {
 
   const prismaErrors = {
     P2002: { status: 409, code: 'CONFLICT', message: 'A resource with the same unique value already exists' },
+    P2004: { status: 409, code: 'CONSTRAINT_VIOLATION', message: 'The request violates a database constraint' },
     P2003: { status: 409, code: 'REFERENTIAL_INTEGRITY', message: 'The request conflicts with a related resource' },
     P2014: { status: 409, code: 'RELATIONSHIP_CONFLICT', message: 'The requested change violates a required relationship' },
     P2025: { status: 404, code: 'NOT_FOUND', message: 'The requested resource was not found' },
@@ -32,6 +33,17 @@ module.exports = (error, req, res, next) => {
     P1002: { status: 503, code: 'DATABASE_TIMEOUT', message: 'The database connection timed out' },
     P1017: { status: 503, code: 'DATABASE_DISCONNECTED', message: 'The database connection was interrupted' },
   };
+
+  // Prisma's raw-query wrapper may expose PostgreSQL CHECK/trigger violations as P2010.
+  // Map only known integrity SQLSTATEs; never return the database message to callers.
+  const databaseConstraintCode = String(error.meta?.code || '');
+  if (error.code === 'P2010' && ['23503', '23505', '23514'].includes(databaseConstraintCode)) {
+    return res.status(409).json({
+      success: false,
+      error: 'CONSTRAINT_VIOLATION',
+      message: 'The request conflicts with a database integrity rule',
+    });
+  }
 
   if (prismaErrors[error.code]) {
     const mapped = prismaErrors[error.code];

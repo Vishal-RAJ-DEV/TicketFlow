@@ -58,6 +58,7 @@ jobs:
         working-directory: event-service
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/event_service_ci
+      RUN_DATABASE_INTEGRATION: 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
