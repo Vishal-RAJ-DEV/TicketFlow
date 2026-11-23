@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: ticketflow-event-service
+    scheme: https
+    metrics_path: /internal/metrics
+    static_configs:
+      - targets: ["event-service:4003"]
+    tls_config:
+      ca_file: /run/secrets/event_service_ca
+      cert_file: /run/secrets/prometheus_client_cert
+      key_file: /run/secrets/prometheus_client_key
+      server_name: event-service
+      min_version: TLS12
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/event_service_metrics_token

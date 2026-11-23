@@ -216,7 +216,7 @@ Operational endpoints are internal-only and require mTLS plus a bearer operation
 - `GET /internal/ops/outbox/dead-letters` — bounded list of dead-lettered events.
 - `POST /internal/ops/outbox/dead-letters/:eventId/retry` — requeue one unpublished dead-lettered event after its root cause is fixed.
 
-Load `monitoring/prometheus/event-service-alerts.yml` into Prometheus to alert on growing backlog, stale pending events, dead letters and missing metrics. This repository provides the rules file; it does not provision Prometheus or Alertmanager. In production, include the Prometheus scraper certificate CN in `EVENT_SERVICE_MTLS_CLIENT_CNS` and supply the metrics token as a protected secret. The attempts metric is a gauge because requeue deliberately resets per-event attempt counts; it is not a monotonic counter.
+Load `monitoring/prometheus/prometheus.yml` and `event-service-alerts.yml` into Prometheus to scrape the protected metrics endpoint using a dedicated client certificate, CA bundle and bearer-token file, and to alert on growing backlog, stale pending events, dead letters and missing metrics. This repository provides the rules file; it does not provision Prometheus or Alertmanager. In production, include the Prometheus scraper certificate CN in `EVENT_SERVICE_MTLS_CLIENT_CNS` and supply the metrics token as a protected secret. The attempts metric is a gauge because requeue deliberately resets per-event attempt counts; it is not a monotonic counter.
 
 ## 13. Production service-to-service security
 

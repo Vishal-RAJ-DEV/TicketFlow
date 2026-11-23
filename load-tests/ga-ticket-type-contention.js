@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+http.setResponseCallback(http.expectedStatuses(201, 400, 409));
 
 const baseUrl = __ENV.BASE_URL;
 const token = __ENV.ACCESS_TOKEN;
