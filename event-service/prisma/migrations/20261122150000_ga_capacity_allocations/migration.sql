@@ -27,7 +27,7 @@ WHERE mapping."ticketTypeId" = ticket_type."id"
 CREATE OR REPLACE FUNCTION enforce_occurrence_layout_venue()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $
+AS $$
 DECLARE
   v_layout_venue_id TEXT;
 BEGIN
@@ -43,7 +43,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$;
+$$;
 
 CREATE TRIGGER "event_occurrences_layout_venue_guard"
 BEFORE INSERT OR UPDATE OF "venueId", "venueLayoutVersionId" ON "event_occurrences"
