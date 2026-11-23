@@ -195,3 +195,33 @@ Implemented in this phase: catalog/configuration ownership, organizer membership
 Not implemented here: inventory materialization/availability, seat locking/holds, GA runtime shards, order/Saga, payment/refunds, Queue Service, Ticket Service, search projection and customer frontend conversion. Event Service does enforce the configured GA section-capacity allocation contract before publication; it does not track live sold/held quantities. These remain owned by later phases.
 
 The current catalog lifecycle records initial occurrence publication state. Automated scheduled status transitions, individual occurrence cancellation, runtime ticket-type pause after publication and Inventory enforcement remain future work; consumers must rely on explicit timestamps and the authoritative Inventory Service once it is implemented.
+
+ 
+## 11. Occurrence lifecycle and cancellation operations
+
+Individual occurrences can be cancelled with `POST /occurrences/:occurrenceId/cancel` (through the Gateway: `POST /api/events/occurrences/:occurrenceId/cancel`). OWNER and ADMIN roles may cancel an occurrence. The operation records `cancelledAt`, an optional reason, increments the occurrence version and inserts `event.occurrence-cancelled` into the outbox in the same transaction. Cancellation is idempotent; a completed occurrence cannot be cancelled.
+
+The lifecycle worker polls published occurrences and advances:
+- `SCHEDULED → ON_SALE` when `salesOpenAt` is reached.
+- `SCHEDULED/ON_SALE → SALES_CLOSED` when `salesCloseAt` is reached.
+- `SCHEDULED/ON_SALE/SALES_CLOSED → COMPLETED` when `endsAt` is reached.
+
+Each transition is row-locked, version-checked and recorded in the transactional outbox as `event.occurrence-sales-opened`, `event.occurrence-sales-closed` or `event.occurrence-completed`. The worker is eventually consistent at its configured polling interval; downstream sales/Inventory enforcement must still check authoritative time windows.
+
+## 12. Outbox operational endpoints and alerting
+
+Operational endpoints are internal-only and require mTLS plus a bearer operations token. The metrics route requires a separate metrics token:
+- `GET /internal/metrics` — Prometheus text exposition.
+- `GET /internal/ops/outbox` — pending, published, dead-letter and oldest-pending summary.
+- `GET /internal/ops/outbox/dead-letters` — bounded list of dead-lettered events.
+- `POST /internal/ops/outbox/dead-letters/:eventId/retry` — requeue one unpublished dead-lettered event after its root cause is fixed.
+
+Load `monitoring/prometheus/event-service-alerts.yml` into Prometheus to alert on growing backlog, stale pending events, dead letters and missing metrics. This repository provides the rules file; it does not provision Prometheus or Alertmanager. In production, include the Prometheus scraper certificate CN in `EVENT_SERVICE_MTLS_CLIENT_CNS` and supply the metrics token as a protected secret. The attempts metric is a gauge because requeue deliberately resets per-event attempt counts; it is not a monotonic counter.
+
+## 13. Production service-to-service security
+
+`docker-compose.production.yml` is a deployment overlay, not a complete production environment. Create the external `ticketflow-edge` and `ticketflow-backend` networks. Only an ingress proxy and the API Gateway should join the edge network. The Gateway and trusted backend services join the backend network; Event Service must not have a published host port. Keep PostgreSQL and Kafka reachable only from backend workloads.
+
+Gateway-to-Event-Service traffic uses mutual TLS and a signed, short-lived HMAC assertion. Add the Gateway client certificate CN and any approved Prometheus scraper CN to `EVENT_SERVICE_MTLS_CLIENT_CNS`. Event Service-to-User-Service calls use HTTPS and a separate internal service key. Kafka uses TLS with CA verification and SASL/SCRAM credentials; disable automatic topic creation and provision topics, partitions, retention, replication and least-privilege ACLs before deployment.
+
+Secrets are read from Docker secret files (`*_FILE`). For a planned key rotation, deploy the new current key while retaining the old value as the previous key on both sides, roll out both services, verify traffic, then remove the previous key in a later rollout. Use the same overlap pattern for Gateway assertion and User Service internal keys. Never store secret contents in Compose YAML or source control.

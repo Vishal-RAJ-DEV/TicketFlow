@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - 'event-service/**'
+      - 'user-service/**'
+      - 'load-tests/**'
+      - 'monitoring/**'
+      - 'docker-compose.production.yml'
       - 'api-gateway/src/**'
       - 'api-gateway/.env.example'
       - 'shared/constants/**'
@@ -133,6 +137,37 @@ jobs:
       - name: Run User Service internal authentication tests
         working-directory: .
         run: npm test --prefix user-service
+      - name: Validate production Compose overlay
+        working-directory: .
+        env:
+          USER_SERVICE_URL: https://user-service:4001
+          SEARCH_SERVICE_URL: https://search-service:4002
+          NOTIFICATION_SERVICE_URL: https://notification-service:4004
+          BOOKING_SERVICE_URL: https://order-service:4005
+          PAYMENT_SERVICE_URL: https://payment-service:4006
+          INVENTORY_SERVICE_URL: https://inventory-service:4007
+          ALLOWED_ORIGINS: https://ticketflow.example.com
+          KAFKA_BROKER: kafka:9093
+          KAFKA_SASL_USERNAME: event-service
+          USER_SERVICE_INTERNAL_KEY_FILE: /tmp/user-key
+          USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE: /tmp/user-key-previous
+          REDIS_URL_SECRET_FILE: /tmp/redis-url
+          JWT_ACCESS_SECRET_FILE: /tmp/jwt-access
+          JWT_REFRESH_SECRET_FILE: /tmp/jwt-refresh
+          GATEWAY_ASSERTION_SECRET_FILE: /tmp/gateway-secret
+          GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE: /tmp/gateway-secret-previous
+          EVENT_DATABASE_URL_SECRET_FILE: /tmp/database-url
+          EVENT_SERVICE_CERT_FILE: /tmp/event-cert
+          EVENT_SERVICE_KEY_FILE: /tmp/event-key
+          GATEWAY_CLIENT_CA_FILE: /tmp/client-ca
+          EVENT_SERVICE_CA_FILE: /tmp/event-ca
+          GATEWAY_CLIENT_CERT_FILE: /tmp/gateway-cert
+          GATEWAY_CLIENT_KEY_FILE: /tmp/gateway-key
+          KAFKA_CA_FILE: /tmp/kafka-ca
+          KAFKA_SASL_PASSWORD_FILE: /tmp/kafka-password
+          EVENT_SERVICE_OPS_TOKEN_FILE: /tmp/ops-token
+          EVENT_SERVICE_METRICS_TOKEN_FILE: /tmp/metrics-token
+        run: docker compose -f docker-compose.production.yml config --quiet
       - name: Validate Docker Compose configuration
         working-directory: .
         env:
