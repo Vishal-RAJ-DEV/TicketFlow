@@ -53,12 +53,26 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     defaults:
       run:
         working-directory: event-service
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/event_service_ci
       RUN_DATABASE_INTEGRATION: 'true'
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-only-access-secret-that-is-at-least-32-characters
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-that-is-at-least-32-characters
+      GATEWAY_ASSERTION_SECRET: ci-only-gateway-assertion-secret-that-is-at-least-32-characters
+      USER_SERVICE_INTERNAL_KEY: ci-only-user-service-internal-key-that-is-at-least-32-characters
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -69,7 +83,10 @@ jobs:
           cache: npm
           cache-dependency-path: event-service/package-lock.json
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm ci --prefix ../api-gateway
+          npm ci --prefix ../user-service
       - name: Report dependency audit findings
         continue-on-error: true
         run: |
@@ -108,9 +125,12 @@ jobs:
         run: |
           while IFS= read -r file; do
             node --check "$file"
-          done < <(find src test ../api-gateway/src ../shared -type f -name '*.js' -print)
-      - name: Run unit tests
+          done < <(find src test ../api-gateway/src ../shared ../user-service/src ../user-service/test -type f -name '*.js' -print)
+      - name: Run Event Service unit and integration tests
         run: npm test
+      - name: Run User Service internal authentication tests
+        working-directory: .
+        run: npm test --prefix user-service
       - name: Validate Docker Compose configuration
         working-directory: .
         env:
