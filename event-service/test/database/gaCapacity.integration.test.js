@@ -25,15 +25,15 @@ const withFixture = async (run) => {
 
   try {
     await client.query(
-      'INSERT INTO organizers (id, name, slug, ownerId, updatedAt) VALUES ($1, $2, $3, $4, $5)',
+      'INSERT INTO organizers (id, name, slug, "ownerId", "updatedAt") VALUES ($1, $2, $3, $4, $5)',
       [ids.organizer, 'Integration Test Organizer', 'it-' + ids.organizer, 'integration-test-user', now]
     );
     await client.query(
-      'INSERT INTO venues (id, organizerId, name, address, city, updatedAt) VALUES ($1, $2, $3, $4, $5, $6)',
+      'INSERT INTO venues (id, "organizerId", name, address, city, "updatedAt") VALUES ($1, $2, $3, $4, $5, $6)',
       [ids.venue, ids.organizer, 'Integration Test Venue', '1 Test Road', 'Test City', now]
     );
     await client.query(
-      'INSERT INTO venue_sections (id, venueId, name, mode, capacity, updatedAt) VALUES ($1, $2, $3, $4, $5, $6)',
+      'INSERT INTO venue_sections (id, "venueId", name, mode, capacity, "updatedAt") VALUES ($1, $2, $3, $4, $5, $6)',
       [ids.section, ids.venue, 'Standing', 'GENERAL_ADMISSION', 1000, now]
     );
 
@@ -43,15 +43,15 @@ const withFixture = async (run) => {
       sections: [{ id: ids.section, name: 'Standing', mode: 'GENERAL_ADMISSION', capacity: 1000, seats: [] }],
     };
     await client.query(
-      'INSERT INTO venue_layout_versions (id, venueId, version, status, snapshot, createdBy, publishedAt, updatedAt) VALUES ($1, $2, 1, $3, $4::jsonb, $5, $6, $7)',
+      'INSERT INTO venue_layout_versions (id, "venueId", version, status, snapshot, "createdBy", "publishedAt", "updatedAt") VALUES ($1, $2, 1, $3, $4::jsonb, $5, $6, $7)',
       [ids.layout, ids.venue, 'PUBLISHED', JSON.stringify(snapshot), 'integration-test-user', now, now]
     );
     await client.query(
-      'INSERT INTO events (id, organizerId, title, slug, category, updatedAt) VALUES ($1, $2, $3, $4, $5, $6)',
+      'INSERT INTO events (id, "organizerId", title, slug, category, "updatedAt") VALUES ($1, $2, $3, $4, $5, $6)',
       [ids.event, ids.organizer, 'Integration Test Event', 'it-' + ids.event, 'test', now]
     );
     await client.query(
-      'INSERT INTO event_occurrences (id, eventId, venueId, venueLayoutVersionId, startsAt, endsAt, salesOpenAt, salesCloseAt, updatedAt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      'INSERT INTO event_occurrences (id, "eventId", "venueId", "venueLayoutVersionId", "startsAt", "endsAt", "salesOpenAt", "salesCloseAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
       [ids.occurrence, ids.event, ids.venue, ids.layout, startsAt, endsAt, salesOpenAt, salesCloseAt, now]
     );
 
