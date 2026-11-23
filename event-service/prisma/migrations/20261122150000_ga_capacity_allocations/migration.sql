@@ -49,6 +49,33 @@ CREATE TRIGGER "event_occurrences_layout_venue_guard"
 BEFORE INSERT OR UPDATE OF "venueId", "venueLayoutVersionId" ON "event_occurrences"
 FOR EACH ROW EXECUTE FUNCTION enforce_occurrence_layout_venue();
 
+-- Acquire the occurrence serialization lock before PostgreSQL checks the
+-- ticket_types.occurrenceId foreign key. If the lock is first acquired from
+-- the later ticket_type_sections trigger, concurrent inserts can each hold a
+-- KEY SHARE lock and deadlock while upgrading to FOR UPDATE.
+CREATE OR REPLACE FUNCTION lock_ticket_type_occurrence()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $
+BEGIN
+  PERFORM 1
+  FROM "event_occurrences"
+  WHERE "id" = NEW."occurrenceId"
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Ticket type occurrence does not exist'
+      USING ERRCODE = '23503';
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER "ticket_types_occurrence_serialization_guard"
+BEFORE INSERT OR UPDATE OF "occurrenceId" ON "ticket_types"
+FOR EACH ROW EXECUTE FUNCTION lock_ticket_type_occurrence();
+
 -- Keep the occurrence as the serialization point for allocations across ticket tiers.
 CREATE OR REPLACE FUNCTION enforce_ticket_type_section_allocation()
 RETURNS TRIGGER
