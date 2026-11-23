@@ -121,6 +121,8 @@ jobs:
         run: npx prisma validate
       - name: Apply PostgreSQL migrations
         run: npx prisma migrate deploy
+      - name: Generate Prisma Client
+        run: npx prisma generate
       - name: Check JavaScript syntax
         run: |
           while IFS= read -r file; do
