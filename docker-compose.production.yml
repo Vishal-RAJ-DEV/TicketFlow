@@ -70,7 +70,6 @@ services:
       USER_SERVICE_URL: ${USER_SERVICE_URL:?Set the private User Service URL}
       USER_SERVICE_INTERNAL_KEY_FILE: /run/secrets/user_service_internal_key
       USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE: /run/secrets/user_service_internal_key_previous
-      USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE: /run/secrets/user_service_internal_key_previous
       USER_SERVICE_TIMEOUT_MS: 3000
       USER_STATUS_CACHE_TTL_MS: 10000
       EVENT_SERVICE_TLS_ENABLED: "true"
@@ -99,8 +98,6 @@ services:
       - gateway_assertion_secret
       - gateway_assertion_secret_previous
       - user_service_internal_key
-      - user_service_internal_key_previous
-      - user_service_internal_key_previous
       - user_service_internal_key_previous
       - event_service_cert
       - event_service_key
