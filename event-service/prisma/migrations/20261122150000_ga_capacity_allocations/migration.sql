@@ -56,7 +56,7 @@ FOR EACH ROW EXECUTE FUNCTION enforce_occurrence_layout_venue();
 CREATE OR REPLACE FUNCTION lock_ticket_type_occurrence()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
   PERFORM 1
   FROM "event_occurrences"
@@ -70,7 +70,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$;
+$$;
 
 CREATE TRIGGER "ticket_types_occurrence_serialization_guard"
 BEFORE INSERT OR UPDATE OF "occurrenceId" ON "ticket_types"
