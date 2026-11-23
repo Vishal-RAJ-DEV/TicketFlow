@@ -148,6 +148,11 @@ services:
       LOG_LEVEL: info
       DATABASE_URL: postgres://admin:${POSTGRES_PASSWORD:-local-dev-postgres-password}@postgres:5432/event_service_database
       GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:?Set GATEWAY_ASSERTION_SECRET in the repository .env file}
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://host.docker.internal:4001}
+      USER_SERVICE_INTERNAL_KEY: ${USER_SERVICE_INTERNAL_KEY:-}
+      EVENT_SERVICE_OPS_TOKEN: ${EVENT_SERVICE_OPS_TOKEN:-local-dev-ops-token-change-me-32-chars}
+      EVENT_SERVICE_METRICS_TOKEN: ${EVENT_SERVICE_METRICS_TOKEN:-local-dev-metrics-token-change-me-32-chars}
+      KAFKA_ALLOW_AUTO_TOPIC_CREATION: "true"
       KAFKA_BROKER: kafka:9092
       KAFKA_CLIENT_ID: event-service
       ALLOWED_ORIGINS: http://localhost:3000,http://localhost:4000
@@ -159,6 +164,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:4003:4003"
     networks:

@@ -1,6 +1,6 @@
 const config = {
      PORT: process.env.PORT || 4000,
-     SERVICE_NAME: require('../../package.json').name,
+     SERVICE_NAME: 'api-gateway',
      NODE_ENV: process.env.NODE_ENV || 'development',
 
      REDIS_URL: process.env.REDIS_URL,
@@ -9,6 +9,10 @@ const config = {
      JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
      JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
      GATEWAY_ASSERTION_SECRET: process.env.GATEWAY_ASSERTION_SECRET,
+     GATEWAY_ASSERTION_SECRET_PREVIOUS: process.env.GATEWAY_ASSERTION_SECRET_PREVIOUS || '',
+     EVENT_SERVICE_TLS_CA_FILE: process.env.EVENT_SERVICE_TLS_CA_FILE || '',
+     EVENT_SERVICE_TLS_CLIENT_CERT_FILE: process.env.EVENT_SERVICE_TLS_CLIENT_CERT_FILE || '',
+     EVENT_SERVICE_TLS_CLIENT_KEY_FILE: process.env.EVENT_SERVICE_TLS_CLIENT_KEY_FILE || '',
      ACCESS_TOKEN_EXP: process.env.ACCESS_TOKEN_EXP,
      REFRESH_TOKEN_EXP: process.env.REFRESH_TOKEN_EXP,
      ACCESS_TOKEN_EXP_SEC: parseInt(process.env.ACCESS_TOKEN_EXP_SEC || '900', 10),
@@ -43,6 +47,14 @@ requiredConfig.forEach((key) => {
 
 if (config.GATEWAY_ASSERTION_SECRET.length < 32) {
      throw new Error('GATEWAY_ASSERTION_SECRET must contain at least 32 characters');
+}
+
+if (config.NODE_ENV === 'production') {
+     const eventServiceUrl = new URL(config.SERVICES.EVENT_SERVICE_URL);
+     if (eventServiceUrl.protocol !== 'https:') throw new Error('EVENT_SERVICE_URL must use HTTPS in production');
+     if (!config.EVENT_SERVICE_TLS_CA_FILE || !config.EVENT_SERVICE_TLS_CLIENT_CERT_FILE || !config.EVENT_SERVICE_TLS_CLIENT_KEY_FILE) {
+          throw new Error('Gateway-to-Event-Service mTLS CA, client certificate and private key files are required in production');
+     }
 }
 
 module.exports = { config };

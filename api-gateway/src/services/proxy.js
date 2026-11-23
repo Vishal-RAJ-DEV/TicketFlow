@@ -1,4 +1,6 @@
 const axios = require('axios');
+const fs = require('node:fs');
+const https = require('node:https');
 const { config } = require('../config');
 const { ServiceUnavailableError, GatewayTimeoutError } = require('../utils/error');
 const logger = require('../config/logger');
@@ -93,7 +95,7 @@ const circuitBreakers = {
      inventoryService: new CircuitBreaker('inventory-service')
 };
 
-async function forwardRequest(serviceUrl, path, method, data, headers, circuitBreaker) {
+async function forwardRequest(serviceUrl, path, method, data, headers, circuitBreaker, httpsAgent) {
      const url = `${serviceUrl}${path}`;
      const requestConfig = {
           method,
@@ -106,6 +108,7 @@ async function forwardRequest(serviceUrl, path, method, data, headers, circuitBr
           },
           validateStatus: () => true,
           maxRedirects: 0,
+          ...(httpsAgent ? { httpsAgent } : {}),
      };
 
      if (method !== 'GET' && method !== 'DELETE' && data !== undefined) {
@@ -153,6 +156,17 @@ function createProxy(serviceName, serviceUrl, options = {}) {
      const circuitBreaker = circuitBreakers[serviceName];
      if (!circuitBreaker) throw new Error(`No circuit breaker found for service: ${serviceName}`);
 
+     const httpsAgent = options.httpsAgent || (serviceName === 'eventService' && serviceUrl.startsWith('https:')
+          ? new https.Agent({
+               ca: fs.readFileSync(config.EVENT_SERVICE_TLS_CA_FILE),
+               cert: fs.readFileSync(config.EVENT_SERVICE_TLS_CLIENT_CERT_FILE),
+               key: fs.readFileSync(config.EVENT_SERVICE_TLS_CLIENT_KEY_FILE),
+               rejectUnauthorized: true,
+               minVersion: 'TLSv1.2',
+               keepAlive: true,
+          })
+          : undefined);
+
      return async (req, res, next) => {
           try {
                const pathParts = req.path.split('/').filter(Boolean);
@@ -187,7 +201,8 @@ function createProxy(serviceName, serviceUrl, options = {}) {
                     req.method,
                     req.body,
                     headers,
-                    circuitBreaker
+                    circuitBreaker,
+                    httpsAgent
                );
 
                const excludeHeaders = ['connection', 'keep-alive', 'transfer-encoding', 'host'];
