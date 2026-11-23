@@ -1,13 +1,12 @@
 name: Event Service CI
 
+permissions:
+  contents: write
+
 on:
   pull_request:
     paths:
       - 'event-service/**'
-      - 'user-service/**'
-      - 'load-tests/**'
-      - 'monitoring/**'
-      - 'docker-compose.production.yml'
       - 'user-service/**'
       - 'load-tests/**'
       - 'monitoring/**'
@@ -118,34 +117,30 @@ jobs:
           retention-days: 7
       - name: Report dependency audit findings
         continue-on-error: true
+        working-directory: .
         run: |
-          npm audit --json > "$RUNNER_TEMP/event-service-npm-audit.json" || true
-          node - "$RUNNER_TEMP/event-service-npm-audit.json" <<'NODE'
-          const fs = require('node:fs');
-          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          const totals = report.metadata?.vulnerabilities || {};
-          console.log('npm audit totals:', JSON.stringify(totals));
-          for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
-            const via = (item.via || []).map((entry) => typeof entry === 'string'
-              ? entry
-              : { title: entry.title, severity: entry.severity, range: entry.range, url: entry.url });
-            console.log(JSON.stringify({
-              name, severity: item.severity, isDirect: item.isDirect,
-              range: item.range, fixAvailable: item.fixAvailable, via,
-            }));
-          }
-          NODE
-          npm audit --omit=dev --json > "$RUNNER_TEMP/event-service-production-audit.json" || true
-          node - "$RUNNER_TEMP/event-service-production-audit.json" <<'NODE'
-          const fs = require('node:fs');
-          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          const totals = report.metadata?.vulnerabilities || {};
-          console.log('production-only npm audit totals:', JSON.stringify(totals));
-          for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
-            const via = (item.via || []).map((entry) => typeof entry === 'string' ? entry : entry.title);
-            console.log(JSON.stringify({ name, severity: item.severity, range: item.range, fixAvailable: item.fixAvailable, via }));
-          }
-          NODE
+          for service in event-service api-gateway user-service; do
+            echo "===== Full dependency audit: $service ====="
+            (cd "$GITHUB_WORKSPACE/$service" && npm audit --json > "$RUNNER_TEMP/$service-audit.json") || true
+            node - "$RUNNER_TEMP/$service-audit.json" "$service" <<'NODE'
+            const fs = require('node:fs');
+            const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+            console.log(process.argv[3], 'full audit:', JSON.stringify(report.metadata?.vulnerabilities || {}));
+            for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
+              console.log(JSON.stringify({ name, severity: item.severity, range: item.range, isDirect: item.isDirect, fixAvailable: item.fixAvailable }));
+            }
+            NODE
+            echo "===== Production-only dependency audit: $service ====="
+            (cd "$GITHUB_WORKSPACE/$service" && npm audit --omit=dev --json > "$RUNNER_TEMP/$service-production-audit.json") || true
+            node - "$RUNNER_TEMP/$service-production-audit.json" "$service" <<'NODE'
+            const fs = require('node:fs');
+            const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+            console.log(process.argv[3], 'production-only audit:', JSON.stringify(report.metadata?.vulnerabilities || {}));
+            for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
+              console.log(JSON.stringify({ name, severity: item.severity, range: item.range, fixAvailable: item.fixAvailable }));
+            }
+            NODE
+          done
       - name: Validate Prisma schema
         run: npx prisma validate
       - name: Apply PostgreSQL migrations
@@ -201,3 +196,19 @@ jobs:
       - name: Build Event Service image
         working-directory: .
         run: docker build -f event-service/Dockerfile -t ticketflow-event-service:ci .
+      - name: Commit tested dependency lockfiles
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/phase-2.1/')
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add event-service/package-lock.json api-gateway/package-lock.json user-service/package-lock.json
+          if git diff --cached --quiet; then
+            echo "Dependency lockfiles are already current."
+            exit 0
+          fi
+          git commit -m "chore(deps): refresh audited dependency lockfiles"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
