@@ -25,3 +25,7 @@ exports.publishOccurrence = asyncHandler(async (req, res) => {
   const occurrence = await occurrenceService.publishOccurrence(req.params.occurrenceId, req.user.id);
   res.status(200).json({ success: true, message: 'Event occurrence published', data: occurrence });
 });
+exports.cancelOccurrence = asyncHandler(async (req, res) => {
+  const occurrence = await occurrenceService.cancelOccurrence(req.params.occurrenceId, req.user.id, req.body);
+  res.status(200).json({ success: true, message: 'Event occurrence cancelled', data: occurrence });
+});

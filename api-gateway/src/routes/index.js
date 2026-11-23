@@ -123,6 +123,7 @@ eventRoute('get', '/events/occurrences/events/:eventId');
 eventRoute('get', '/events/occurrences/:occurrenceId');
 eventRoute('patch', '/events/occurrences/:occurrenceId');
 eventRoute('post', '/events/occurrences/:occurrenceId/publish');
+eventRoute('post', '/events/occurrences/:occurrenceId/cancel');
 
 eventRoute('post', '/events/ticket-types/occurrences/:occurrenceId');
 eventRoute('get', '/events/ticket-types/occurrences/:occurrenceId');

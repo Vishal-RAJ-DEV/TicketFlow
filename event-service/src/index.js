@@ -19,6 +19,8 @@ const occurrenceRoutes = require('./routes/occurrence.route');
 const ticketTypeRoutes = require('./routes/ticketType.route');
 const { disconnectProducer } = require('./config/kafka');
 const { startOutboxPublisher, stopOutboxPublisher } = require('./kafka/outbox.publisher');
+const { startOccurrenceLifecycleWorker, stopOccurrenceLifecycleWorker } = require('./kafka/occurrenceLifecycle.worker');
+const opsRoutes = require('./routes/ops.route');
 const prisma = require('./config/prisma');
 
 const app = express();
@@ -76,6 +78,9 @@ app.use('/ticket-types', gatewayAssertion, ticketTypeRoutes);
 app.get('/catalog', eventController.listPublicEvents);
 app.get('/catalog/:slug', eventController.getPublicEvent);
 
+// Operational endpoints are deliberately not registered in the public API Gateway.
+app.use('/internal', opsRoutes);
+
 app.use(notFound);
 app.use(errorHandler);
 
@@ -83,6 +88,7 @@ const startServer = () => {
   const server = app.listen(config.PORT, () => {
     logger.info(config.SERVICE_NAME + ' is running on port ' + config.PORT);
     startOutboxPublisher();
+    startOccurrenceLifecycleWorker();
   });
 
   let shuttingDown = false;
@@ -91,6 +97,7 @@ const startServer = () => {
     shuttingDown = true;
     logger.info('Received ' + signal + ', shutting down Event Service');
     stopOutboxPublisher();
+    stopOccurrenceLifecycleWorker();
 
     server.close(async () => {
       try {
