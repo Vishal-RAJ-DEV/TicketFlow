@@ -1,3 +1,5 @@
+const { readSecret } = require('../../../shared/utils/readSecret');
+
 const config = {
      PORT: process.env.PORT || 4000,
      SERVICE_NAME: 'api-gateway',
@@ -6,10 +8,10 @@ const config = {
      REDIS_URL: process.env.REDIS_URL,
      ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || 'http://localhost:3000',
 
-     JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
-     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
-     GATEWAY_ASSERTION_SECRET: process.env.GATEWAY_ASSERTION_SECRET,
-     GATEWAY_ASSERTION_SECRET_PREVIOUS: process.env.GATEWAY_ASSERTION_SECRET_PREVIOUS || '',
+     JWT_ACCESS_SECRET: readSecret('JWT_ACCESS_SECRET'),
+     JWT_REFRESH_SECRET: readSecret('JWT_REFRESH_SECRET'),
+     GATEWAY_ASSERTION_SECRET: readSecret('GATEWAY_ASSERTION_SECRET'),
+     GATEWAY_ASSERTION_SECRET_PREVIOUS: readSecret('GATEWAY_ASSERTION_SECRET_PREVIOUS'),
      EVENT_SERVICE_TLS_CA_FILE: process.env.EVENT_SERVICE_TLS_CA_FILE || '',
      EVENT_SERVICE_TLS_CLIENT_CERT_FILE: process.env.EVENT_SERVICE_TLS_CLIENT_CERT_FILE || '',
      EVENT_SERVICE_TLS_CLIENT_KEY_FILE: process.env.EVENT_SERVICE_TLS_CLIENT_KEY_FILE || '',
