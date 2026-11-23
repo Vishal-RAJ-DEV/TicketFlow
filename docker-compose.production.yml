@@ -131,10 +131,6 @@ secrets:
     file: ${USER_SERVICE_INTERNAL_KEY_FILE:?Provide the User Service internal key file}
   user_service_internal_key_previous:
     file: ${USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE:?Provide the previous User Service key file (empty when not rotating)}
-  user_service_internal_key_previous:
-    file: ${USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE:?Provide the previous User Service key file (empty when not rotating)}
-  user_service_internal_key_previous:
-    file: ${USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE:?Provide the previous User Service key file (empty when not rotating)}
   event_service_cert:
     file: ${EVENT_SERVICE_CERT_FILE:?Provide the Event Service TLS certificate}
   event_service_key:
