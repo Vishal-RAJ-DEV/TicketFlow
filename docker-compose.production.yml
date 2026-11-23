@@ -1,0 +1,159 @@
+# Production overlay. Requires externally provisioned private networks and secret files.
+# Do not publish the Event Service port. Public TLS terminates at the ingress in ticketflow-edge.
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    image: ticketflow-api-gateway:production
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 256
+    expose: ["4000"]
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      REDIS_URL_FILE: /run/secrets/redis_url
+      JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
+      JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
+      GATEWAY_ASSERTION_SECRET_FILE: /run/secrets/gateway_assertion_secret
+      GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE: /run/secrets/gateway_assertion_secret_previous
+      EVENT_SERVICE_URL: https://event-service:4003
+      EVENT_SERVICE_TLS_CA_FILE: /run/secrets/event_service_ca
+      EVENT_SERVICE_TLS_CLIENT_CERT_FILE: /run/secrets/gateway_client_cert
+      EVENT_SERVICE_TLS_CLIENT_KEY_FILE: /run/secrets/gateway_client_key
+      USER_SERVICE_URL: ${USER_SERVICE_URL:?Set the private User Service URL}
+      SEARCH_SERVICE_URL: ${SEARCH_SERVICE_URL:?Set the private Search Service URL}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:?Set the private Notification Service URL}
+      BOOKING_SERVICE_URL: ${BOOKING_SERVICE_URL:?Set the private Booking Service URL}
+      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:?Set the private Payment Service URL}
+      INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:?Set the private Inventory Service URL}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set the production browser origin allowlist}
+      SERVICE_TIMEOUT_MS: 5000
+      CIRCUIT_BREAKER_THRESHOLD: 5
+      CIRCUIT_BREAKER_TIMEOUT: 30000
+    secrets:
+      - redis_url
+      - jwt_access_secret
+      - jwt_refresh_secret
+      - gateway_assertion_secret
+      - gateway_assertion_secret_previous
+      - event_service_ca
+      - gateway_client_cert
+      - gateway_client_key
+    networks: [ticketflow-edge, ticketflow-backend]
+
+  event-service:
+    build:
+      context: .
+      dockerfile: event-service/Dockerfile
+    image: ticketflow-event-service:production
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 256
+    expose: ["4003"]
+    environment:
+      NODE_ENV: production
+      PORT: 4003
+      LOG_LEVEL: info
+      DATABASE_URL_FILE: /run/secrets/event_database_url
+      GATEWAY_ASSERTION_SECRET_FILE: /run/secrets/gateway_assertion_secret
+      GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE: /run/secrets/gateway_assertion_secret_previous
+      USER_SERVICE_URL: ${USER_SERVICE_URL:?Set the private User Service URL}
+      USER_SERVICE_INTERNAL_KEY_FILE: /run/secrets/user_service_internal_key
+      USER_SERVICE_TIMEOUT_MS: 3000
+      USER_STATUS_CACHE_TTL_MS: 10000
+      EVENT_SERVICE_TLS_ENABLED: "true"
+      EVENT_SERVICE_TLS_CERT_FILE: /run/secrets/event_service_cert
+      EVENT_SERVICE_TLS_KEY_FILE: /run/secrets/event_service_key
+      EVENT_SERVICE_MTLS_CA_FILE: /run/secrets/gateway_client_ca
+      EVENT_SERVICE_MTLS_CLIENT_CN: ticketflow-api-gateway
+      KAFKA_BROKER: ${KAFKA_BROKER:?Set the private Kafka bootstrap address}
+      KAFKA_CLIENT_ID: event-service
+      KAFKA_SSL: "true"
+      KAFKA_CA_FILE: /run/secrets/kafka_ca
+      KAFKA_SASL_MECHANISM: scram-sha-512
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:?Set the Kafka SASL username}
+      KAFKA_SASL_PASSWORD_FILE: /run/secrets/kafka_sasl_password
+      KAFKA_ALLOW_AUTO_TOPIC_CREATION: "false"
+      OUTBOX_POLL_INTERVAL_MS: 1000
+      OUTBOX_BATCH_SIZE: 50
+      OUTBOX_LOCK_TIMEOUT_MS: 60000
+      OUTBOX_MAX_ATTEMPTS: 12
+      OCCURRENCE_LIFECYCLE_POLL_INTERVAL_MS: 15000
+      OCCURRENCE_LIFECYCLE_BATCH_SIZE: 100
+      EVENT_SERVICE_OPS_TOKEN_FILE: /run/secrets/event_service_ops_token
+      EVENT_SERVICE_METRICS_TOKEN_FILE: /run/secrets/event_service_metrics_token
+    secrets:
+      - event_database_url
+      - gateway_assertion_secret
+      - gateway_assertion_secret_previous
+      - user_service_internal_key
+      - event_service_cert
+      - event_service_key
+      - gateway_client_ca
+      - kafka_ca
+      - kafka_sasl_password
+      - event_service_ops_token
+      - event_service_metrics_token
+    networks: [ticketflow-backend]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('https').get({hostname:'127.0.0.1',port:4003,path:'/ready',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+secrets:
+  redis_url:
+    file: ${REDIS_URL_SECRET_FILE:?Provide a file containing the private Redis URL}
+  jwt_access_secret:
+    file: ${JWT_ACCESS_SECRET_FILE:?Provide the API Gateway access-token secret file}
+  jwt_refresh_secret:
+    file: ${JWT_REFRESH_SECRET_FILE:?Provide the API Gateway refresh-token secret file}
+  gateway_assertion_secret:
+    file: ${GATEWAY_ASSERTION_SECRET_FILE:?Provide the shared Gateway assertion secret file}
+  gateway_assertion_secret_previous:
+    file: ${GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE:?Provide the previous assertion secret file (empty when not rotating)}
+  event_database_url:
+    file: ${EVENT_DATABASE_URL_SECRET_FILE:?Provide the Event Service PostgreSQL URL file}
+  user_service_internal_key:
+    file: ${USER_SERVICE_INTERNAL_KEY_FILE:?Provide the User Service internal key file}
+  event_service_cert:
+    file: ${EVENT_SERVICE_CERT_FILE:?Provide the Event Service TLS certificate}
+  event_service_key:
+    file: ${EVENT_SERVICE_KEY_FILE:?Provide the Event Service TLS private key}
+  gateway_client_ca:
+    file: ${GATEWAY_CLIENT_CA_FILE:?Provide the CA that issues Gateway client certificates}
+  event_service_ca:
+    file: ${EVENT_SERVICE_CA_FILE:?Provide the CA that issues Event Service server certificates}
+  gateway_client_cert:
+    file: ${GATEWAY_CLIENT_CERT_FILE:?Provide the Gateway mTLS client certificate}
+  gateway_client_key:
+    file: ${GATEWAY_CLIENT_KEY_FILE:?Provide the Gateway mTLS client private key}
+  kafka_ca:
+    file: ${KAFKA_CA_FILE:?Provide the Kafka TLS CA certificate}
+  kafka_sasl_password:
+    file: ${KAFKA_SASL_PASSWORD_FILE:?Provide the Kafka SASL password file}
+  event_service_ops_token:
+    file: ${EVENT_SERVICE_OPS_TOKEN_FILE:?Provide the outbox operations token file}
+  event_service_metrics_token:
+    file: ${EVENT_SERVICE_METRICS_TOKEN_FILE:?Provide the metrics scraping token file}
+
+networks:
+  # Attach the external ingress/reverse-proxy container to ticketflow-edge.
+  ticketflow-edge:
+    external: true
+    name: ${TICKETFLOW_EDGE_NETWORK:-ticketflow-edge}
+  # Only private service workloads should join ticketflow-backend.
+  ticketflow-backend:
+    external: true
+    name: ${TICKETFLOW_BACKEND_NETWORK:-ticketflow-backend}

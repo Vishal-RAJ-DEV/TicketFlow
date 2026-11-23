@@ -5,7 +5,7 @@ const config = {
      SERVICE_NAME: 'api-gateway',
      NODE_ENV: process.env.NODE_ENV || 'development',
 
-     REDIS_URL: process.env.REDIS_URL,
+     REDIS_URL: readSecret('REDIS_URL'),
      ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || 'http://localhost:3000',
 
      JWT_ACCESS_SECRET: readSecret('JWT_ACCESS_SECRET'),
