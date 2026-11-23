@@ -147,14 +147,16 @@ test('concurrent GA tier creation cannot over-allocate the same section', { skip
     const attempt = async (connection, capacity, code) => {
       await connection.query('BEGIN');
       try {
+        // Synchronize before taking the occurrence lock so both insertions
+        // contend for the same row without a test-side lock/barrier cycle.
+        arrivals += 1;
+        if (arrivals === 2) release();
+        await barrier;
         const now = new Date();
         await connection.query(
           'INSERT INTO ticket_types (id, "occurrenceId", name, code, mode, capacity, "salesStartsAt", "salesEndsAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
           [randomUUID(), ids.occurrence, 'Concurrent Tier', code, 'GENERAL_ADMISSION', capacity, now, new Date(now.getTime() + 60 * 60 * 1000), now]
         );
-        arrivals += 1;
-        if (arrivals === 2) release();
-        await barrier;
         const ticketType = await connection.query(
           'SELECT id FROM ticket_types WHERE "occurrenceId" = $1 AND code = $2',
           [ids.occurrence, code]
