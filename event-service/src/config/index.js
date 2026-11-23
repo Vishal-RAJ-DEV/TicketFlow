@@ -33,6 +33,7 @@ const config = {
   TLS_CERT_FILE: process.env.EVENT_SERVICE_TLS_CERT_FILE || '',
   TLS_KEY_FILE: process.env.EVENT_SERVICE_TLS_KEY_FILE || '',
   MTLS_CA_FILE: process.env.EVENT_SERVICE_MTLS_CA_FILE || '',
+  MTLS_CLIENT_CN: process.env.EVENT_SERVICE_MTLS_CLIENT_CN || 'ticketflow-api-gateway',
 };
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL environment variable is required');
 if (typeof config.GATEWAY_ASSERTION_SECRET !== 'string' || config.GATEWAY_ASSERTION_SECRET.length < 32) throw new Error('GATEWAY_ASSERTION_SECRET must contain at least 32 characters');

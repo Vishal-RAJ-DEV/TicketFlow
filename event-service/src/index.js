@@ -1,5 +1,8 @@
 require('dotenv').config();
 const express = require('express');
+const fs = require('node:fs');
+const https = require('node:https');
+const http = require('node:http');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const logger = require('./config/logger');
@@ -10,6 +13,7 @@ const { reqLogger } = require('./middlewares/req.middleware');
 const errorHandler = require('./middlewares/error.middleware');
 const notFound = require('./middlewares/notFound.middleware');
 const { gatewayAssertion } = require('./middlewares/gatewayAssertion.middleware');
+const { requireMtlsClient } = require('./middlewares/mtlsClient.middleware');
 const { BadRequestError } = require('./utils/error');
 const organizerRoutes = require('./routes/organizer.route');
 const venueRoutes = require('./routes/venue.route');
@@ -24,13 +28,10 @@ const opsRoutes = require('./routes/ops.route');
 const prisma = require('./config/prisma');
 
 const app = express();
-
 app.use(corsMiddleware);
-app.use(helmet({
-  crossOriginOpenerPolicy: false,
-  crossOriginEmbedderPolicy: false,
-}));
+app.use(helmet({ crossOriginOpenerPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(reqLogger);
+app.use(requireMtlsClient);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb', parameterLimit: 100 }));
 app.use(cookieParser());
@@ -39,54 +40,43 @@ app.use((req, res, next) => {
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) || Buffer.isBuffer(req.body)) {
     return next(new BadRequestError('Request body must be a JSON object'));
   }
-  next();
+  return next();
 });
-
-app.get('/', (req, res) => {
-  res.status(200).json({ success: true, service: config.SERVICE_NAME });
-});
-
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    service: config.SERVICE_NAME,
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-  });
-});
-
+app.get('/', (req, res) => res.status(200).json({ success: true, service: config.SERVICE_NAME }));
+app.get('/health', (req, res) => res.status(200).json({
+  success: true, service: config.SERVICE_NAME, status: 'healthy', timestamp: new Date().toISOString(),
+}));
 app.get('/ready', asyncHandler(async (req, res) => {
   await prisma.$queryRaw`SELECT 1`;
-  res.status(200).json({
-    success: true,
-    service: config.SERVICE_NAME,
-    status: 'ready',
-    dependencies: { database: 'available' },
-    timestamp: new Date().toISOString(),
-  });
+  res.status(200).json({ success: true, service: config.SERVICE_NAME, status: 'ready', dependencies: { database: 'available' }, timestamp: new Date().toISOString() });
 }));
-
-// Every business/catalog endpoint must be reached through the gateway.
-// Liveness/readiness remain directly accessible to container orchestration.
 app.use('/catalog', gatewayAssertion);
 app.use('/organizers', gatewayAssertion, organizerRoutes);
 app.use('/venues', gatewayAssertion, venueRoutes);
 app.use('/events', gatewayAssertion, eventRoutes);
 app.use('/occurrences', gatewayAssertion, occurrenceRoutes);
 app.use('/ticket-types', gatewayAssertion, ticketTypeRoutes);
-
 app.get('/catalog', eventController.listPublicEvents);
 app.get('/catalog/:slug', eventController.getPublicEvent);
-
-// Operational endpoints are deliberately not registered in the public API Gateway.
+// Operational endpoints are intentionally not registered in the public API Gateway.
 app.use('/internal', opsRoutes);
-
 app.use(notFound);
 app.use(errorHandler);
 
 const startServer = () => {
-  const server = app.listen(config.PORT, () => {
-    logger.info(config.SERVICE_NAME + ' is running on port ' + config.PORT);
+  const server = config.TLS_ENABLED
+    ? https.createServer({
+        key: fs.readFileSync(config.TLS_KEY_FILE),
+        cert: fs.readFileSync(config.TLS_CERT_FILE),
+        ca: fs.readFileSync(config.MTLS_CA_FILE),
+        requestCert: true,
+        rejectUnauthorized: false,
+        minVersion: 'TLSv1.2',
+      }, app)
+    : http.createServer(app);
+
+  server.listen(config.PORT, () => {
+    logger.info(config.SERVICE_NAME + ' is running on port ' + config.PORT + (config.TLS_ENABLED ? ' with mTLS' : ''));
     startOutboxPublisher();
     startOccurrenceLifecycleWorker();
   });
@@ -98,7 +88,6 @@ const startServer = () => {
     logger.info('Received ' + signal + ', shutting down Event Service');
     stopOutboxPublisher();
     stopOccurrenceLifecycleWorker();
-
     server.close(async () => {
       try {
         await disconnectProducer();
@@ -111,12 +100,9 @@ const startServer = () => {
       }
     });
   };
-
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
   return server;
 };
-
 if (require.main === module) startServer();
-
 module.exports = { app, startServer };
