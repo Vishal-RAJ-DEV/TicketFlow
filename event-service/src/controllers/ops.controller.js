@@ -4,7 +4,7 @@ const outboxOperations = require('../services/outboxOperations.service');
 const metrics = asyncHandler(async (req, res) => {
   const stats = await outboxOperations.getOutboxStats();
   const lines = [
-    '# HELP ticketflow_outbox_pending_events Unpublished outbox events that are eligible for retry.',
+    '# HELP ticketflow_outbox_pending_events Unpublished outbox events that have not been dead-lettered.',
     '# TYPE ticketflow_outbox_pending_events gauge',
     'ticketflow_outbox_pending_events ' + stats.pending,
     '# HELP ticketflow_outbox_dead_letter_events Unpublished outbox events requiring operator action.',
@@ -16,9 +16,9 @@ const metrics = asyncHandler(async (req, res) => {
     '# HELP ticketflow_outbox_oldest_pending_seconds Age of the oldest pending outbox event.',
     '# TYPE ticketflow_outbox_oldest_pending_seconds gauge',
     'ticketflow_outbox_oldest_pending_seconds ' + stats.oldest_pending_seconds,
-    '# HELP ticketflow_outbox_publish_attempts_total Publish attempts recorded by the outbox.',
-    '# TYPE ticketflow_outbox_publish_attempts_total counter',
-    'ticketflow_outbox_publish_attempts_total ' + stats.publish_attempts,
+    '# HELP ticketflow_outbox_publish_attempts Current sum of publish attempts stored on outbox records.',
+    '# TYPE ticketflow_outbox_publish_attempts gauge',
+    'ticketflow_outbox_publish_attempts ' + stats.publish_attempts,
   ];
   res.type('text/plain; version=0.0.4; charset=utf-8').status(200).send(lines.join('\n') + '\n');
 });

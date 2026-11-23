@@ -15,15 +15,15 @@ const getOutboxStats = async () => {
   return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value || 0)]));
 };
 
-const listDeadLetters = async (limit = 100) => prisma.outboxEvent.findMany({
+const listDeadLetters = async (limit = 100, client = prisma) => client.outboxEvent.findMany({
   where: { publishedAt: null, deadLetteredAt: { not: null } },
   select: { id: true, eventType: true, aggregateType: true, aggregateId: true, aggregateVersion: true, attempts: true, lastError: true, deadLetteredAt: true, createdAt: true },
   orderBy: [{ deadLetteredAt: 'asc' }, { id: 'asc' }],
   take: Math.min(Math.max(Number(limit) || 100, 1), 200),
 });
 
-const retryDeadLetter = async (eventId) => {
-  const changed = await prisma.outboxEvent.updateMany({
+const retryDeadLetter = async (eventId, client = prisma) => {
+  const changed = await client.outboxEvent.updateMany({
     where: { id: eventId, publishedAt: null, deadLetteredAt: { not: null } },
     data: {
       attempts: 0,
@@ -35,7 +35,7 @@ const retryDeadLetter = async (eventId) => {
     },
   });
   if (!changed.count) {
-    const existing = await prisma.outboxEvent.findUnique({ where: { id: eventId }, select: { publishedAt: true, deadLetteredAt: true } });
+    const existing = await client.outboxEvent.findUnique({ where: { id: eventId }, select: { publishedAt: true, deadLetteredAt: true } });
     if (!existing) throw new NotFoundError('Outbox event not found');
     throw new ConflictError('Only an unpublished dead-lettered event can be retried');
   }

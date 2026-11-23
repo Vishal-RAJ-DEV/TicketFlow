@@ -36,6 +36,7 @@ const config = {
   TLS_KEY_FILE: process.env.EVENT_SERVICE_TLS_KEY_FILE || '',
   MTLS_CA_FILE: process.env.EVENT_SERVICE_MTLS_CA_FILE || '',
   MTLS_CLIENT_CN: process.env.EVENT_SERVICE_MTLS_CLIENT_CN || 'ticketflow-api-gateway',
+  MTLS_CLIENT_CNS: String(process.env.EVENT_SERVICE_MTLS_CLIENT_CNS || process.env.EVENT_SERVICE_MTLS_CLIENT_CN || 'ticketflow-api-gateway').split(',').map((value) => value.trim()).filter(Boolean),
 };
 if (!config.DATABASE_URL) throw new Error('DATABASE_URL environment variable is required');
 if (typeof config.GATEWAY_ASSERTION_SECRET !== 'string' || config.GATEWAY_ASSERTION_SECRET.length < 32) throw new Error('GATEWAY_ASSERTION_SECRET must contain at least 32 characters');
@@ -49,4 +50,12 @@ if (config.KAFKA_SASL_USERNAME || config.KAFKA_SASL_PASSWORD) {
 }
 if (config.NODE_ENV === 'production' && (!config.KAFKA_SSL || !config.KAFKA_SASL_USERNAME || !config.KAFKA_SASL_PASSWORD)) throw new Error('Production Kafka requires TLS and SASL credentials');
 if (config.NODE_ENV === 'production' && (!config.OPS_TOKEN || config.OPS_TOKEN.length < 32 || !config.METRICS_TOKEN || config.METRICS_TOKEN.length < 32)) throw new Error('Event Service ops and metrics tokens must contain at least 32 characters in production');
+if (config.NODE_ENV === 'production') {
+  let userServiceUrl;
+  try { userServiceUrl = new URL(config.USER_SERVICE_URL); } catch { throw new Error('USER_SERVICE_URL must be a valid absolute URL'); }
+  if (userServiceUrl.protocol !== 'https:' || userServiceUrl.username || userServiceUrl.password) throw new Error('USER_SERVICE_URL must use HTTPS without embedded credentials in production');
+  if (!config.MTLS_CLIENT_CNS.length) throw new Error('At least one trusted Event Service mTLS client certificate CN is required in production');
+  if (!config.KAFKA_CA_FILE) throw new Error('KAFKA_CA_FILE must be configured for authenticated production Kafka TLS');
+}
+
 module.exports = { config };

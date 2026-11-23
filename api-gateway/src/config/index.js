@@ -53,7 +53,9 @@ if (config.GATEWAY_ASSERTION_SECRET.length < 32) {
 
 if (config.NODE_ENV === 'production') {
      const eventServiceUrl = new URL(config.SERVICES.EVENT_SERVICE_URL);
+     const userServiceUrl = new URL(config.SERVICES.USER_SERVICE_URL);
      if (eventServiceUrl.protocol !== 'https:') throw new Error('EVENT_SERVICE_URL must use HTTPS in production');
+     if (userServiceUrl.protocol !== 'https:') throw new Error('USER_SERVICE_URL must use HTTPS in production');
      if (!config.EVENT_SERVICE_TLS_CA_FILE || !config.EVENT_SERVICE_TLS_CLIENT_CERT_FILE || !config.EVENT_SERVICE_TLS_CLIENT_KEY_FILE) {
           throw new Error('Gateway-to-Event-Service mTLS CA, client certificate and private key files are required in production');
      }

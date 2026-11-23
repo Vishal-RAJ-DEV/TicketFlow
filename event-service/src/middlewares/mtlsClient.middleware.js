@@ -5,7 +5,10 @@ const requireMtlsClient = (req, res, next) => {
   if (!config.TLS_ENABLED || req.path === '/' || req.path === '/health' || req.path === '/ready') return next();
   const socket = req.socket;
   const certificate = socket.getPeerCertificate?.();
-  if (!socket.authorized || !certificate?.subject || certificate.subject.CN !== config.MTLS_CLIENT_CN) {
+  const allowedCommonNames = Array.isArray(config.MTLS_CLIENT_CNS) && config.MTLS_CLIENT_CNS.length
+    ? config.MTLS_CLIENT_CNS
+    : [config.MTLS_CLIENT_CN];
+  if (!socket.authorized || !certificate?.subject || !allowedCommonNames.includes(certificate.subject.CN)) {
     return next(new UnauthorizedError('A trusted API Gateway client certificate is required'));
   }
   return next();
