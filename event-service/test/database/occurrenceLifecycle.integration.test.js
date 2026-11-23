@@ -63,7 +63,7 @@ test('scheduled occurrence advances through ON_SALE, SALES_CLOSED and COMPLETED 
       startsAt,
       endsAt,
     });
-    const { transitionOccurrence } = require('../src/services/occurrenceLifecycle.service');
+    const { transitionOccurrence } = require('../../src/services/occurrenceLifecycle.service');
     const opened = await transitionOccurrence(occurrenceId, now);
     assert.deepEqual(opened.map((item) => item.status), ['ON_SALE']);
     const closed = await transitionOccurrence(occurrenceId, new Date(now.getTime() + 2 * 60 * 60 * 1000));
@@ -95,7 +95,7 @@ test('organizer can cancel an individual occurrence with a reason and transactio
       startsAt,
       endsAt,
     });
-    const { cancelOccurrence } = require('../src/services/occurrence.service');
+    const { cancelOccurrence } = require('../../src/services/occurrence.service');
     const result = await cancelOccurrence(occurrenceId, userId, { reason: 'Venue unavailable' });
     assert.equal(result.status, 'CANCELLED');
     assert.ok(result.cancelledAt instanceof Date);

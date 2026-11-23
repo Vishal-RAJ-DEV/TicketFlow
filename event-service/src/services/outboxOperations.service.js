@@ -1,8 +1,8 @@
 const prisma = require('../config/prisma');
 const { NotFoundError, ConflictError } = require('../utils/error');
 
-const getOutboxStats = async () => {
-  const rows = await prisma.$queryRaw`
+const getOutboxStats = async (client = prisma) => {
+  const rows = await client.$queryRaw`
     SELECT
       COUNT(*) FILTER (WHERE "publishedAt" IS NULL AND "deadLetteredAt" IS NULL)::bigint AS pending,
       COUNT(*) FILTER (WHERE "publishedAt" IS NULL AND "deadLetteredAt" IS NOT NULL)::bigint AS dead_lettered,

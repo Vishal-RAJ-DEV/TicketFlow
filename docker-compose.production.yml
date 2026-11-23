@@ -70,6 +70,7 @@ services:
       USER_SERVICE_URL: ${USER_SERVICE_URL:?Set the private User Service URL}
       USER_SERVICE_INTERNAL_KEY_FILE: /run/secrets/user_service_internal_key
       USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE: /run/secrets/user_service_internal_key_previous
+      USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE: /run/secrets/user_service_internal_key_previous
       USER_SERVICE_TIMEOUT_MS: 3000
       USER_STATUS_CACHE_TTL_MS: 10000
       EVENT_SERVICE_TLS_ENABLED: "true"
@@ -98,6 +99,7 @@ services:
       - gateway_assertion_secret
       - gateway_assertion_secret_previous
       - user_service_internal_key
+      - user_service_internal_key_previous
       - user_service_internal_key_previous
       - user_service_internal_key_previous
       - event_service_cert
@@ -130,6 +132,8 @@ secrets:
     file: ${EVENT_DATABASE_URL_SECRET_FILE:?Provide the Event Service PostgreSQL URL file}
   user_service_internal_key:
     file: ${USER_SERVICE_INTERNAL_KEY_FILE:?Provide the User Service internal key file}
+  user_service_internal_key_previous:
+    file: ${USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE:?Provide the previous User Service key file (empty when not rotating)}
   user_service_internal_key_previous:
     file: ${USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE:?Provide the previous User Service key file (empty when not rotating)}
   user_service_internal_key_previous:
