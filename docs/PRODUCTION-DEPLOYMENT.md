@@ -37,17 +37,17 @@ Create the files referenced by the production Compose variables. Each file shoul
 - Separate CA certificates for the Gateway client identity, Event Service server identity, and Kafka.
 - Kafka SASL password, Event Service ops token, metrics token, and Redis URL.
 
-The Compose overlay deliberately requires a previous Gateway assertion secret file; create an empty file when no rotation is in progress.
+The Event Service verifier receives the previous Gateway assertion secret file; create an empty file when no Gateway assertion rotation is in progress. Event Service (the caller) only receives the current User Service internal key. Configure `INTERNAL_SERVICE_KEY_PREVIOUS_FILE` on the separately deployed User Service, because it is the receiving service that accepts both the current and previous internal keys.
 
 Generate secrets from a cryptographically secure source, e.g. `openssl rand -hex 32`. Do not reuse the JWT keys, Gateway assertion key, User Service key, ops token, metrics token, Kafka password, or database credentials.
 
 ## Rotation procedure
 
-1. Create a new secret and configure the receiving service to accept both current and previous keys.
-2. Roll out the receiver first (Event Service for Gateway assertions; User Service for internal service authentication).
-3. Switch the caller to the new key and roll it out.
-4. Verify authentication, then remove the previous key after the maximum request lifetime plus deployment overlap.
-5. Revoke the old secret at the secret manager.
+1. Generate the new key and configure the receiver to accept it as the previous key while continuing to accept the current key.
+2. Roll out the receiver first: Event Service for Gateway assertions; User Service for internal service authentication.
+3. Switch the caller to the new key and roll it out: Gateway for Event Service assertions; Event Service for User Service internal calls.
+4. Verify traffic and rollback readiness. Promote the new key to receiver current, retaining the old key as previous for a bounded rollback window.
+5. Remove the old previous key from the receiver and revoke it at the secret manager.
 
 Gateway assertions are timestamp-bound and single-use via the database nonce table. Replayed nonces are rejected across all Event Service replicas.
 

@@ -170,7 +170,6 @@ jobs:
           KAFKA_BROKER: kafka:9093
           KAFKA_SASL_USERNAME: event-service
           USER_SERVICE_INTERNAL_KEY_FILE: /tmp/user-key
-          USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE: /tmp/user-key-previous
           REDIS_URL_SECRET_FILE: /tmp/redis-url
           JWT_ACCESS_SECRET_FILE: /tmp/jwt-access
           JWT_REFRESH_SECRET_FILE: /tmp/jwt-refresh

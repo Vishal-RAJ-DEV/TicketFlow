@@ -21,7 +21,6 @@ services:
       JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
       JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
       GATEWAY_ASSERTION_SECRET_FILE: /run/secrets/gateway_assertion_secret
-      GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE: /run/secrets/gateway_assertion_secret_previous
       EVENT_SERVICE_URL: https://event-service:4003
       EVENT_SERVICE_TLS_CA_FILE: /run/secrets/event_service_ca
       EVENT_SERVICE_TLS_CLIENT_CERT_FILE: /run/secrets/gateway_client_cert
@@ -41,7 +40,6 @@ services:
       - jwt_access_secret
       - jwt_refresh_secret
       - gateway_assertion_secret
-      - gateway_assertion_secret_previous
       - event_service_ca
       - gateway_client_cert
       - gateway_client_key
@@ -69,7 +67,6 @@ services:
       GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE: /run/secrets/gateway_assertion_secret_previous
       USER_SERVICE_URL: ${USER_SERVICE_URL:?Set the private User Service URL}
       USER_SERVICE_INTERNAL_KEY_FILE: /run/secrets/user_service_internal_key
-      USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE: /run/secrets/user_service_internal_key_previous
       USER_SERVICE_TIMEOUT_MS: 3000
       USER_STATUS_CACHE_TTL_MS: 10000
       EVENT_SERVICE_TLS_ENABLED: "true"
@@ -98,7 +95,6 @@ services:
       - gateway_assertion_secret
       - gateway_assertion_secret_previous
       - user_service_internal_key
-      - user_service_internal_key_previous
       - event_service_cert
       - event_service_key
       - gateway_client_ca
@@ -129,8 +125,6 @@ secrets:
     file: ${EVENT_DATABASE_URL_SECRET_FILE:?Provide the Event Service PostgreSQL URL file}
   user_service_internal_key:
     file: ${USER_SERVICE_INTERNAL_KEY_FILE:?Provide the User Service internal key file}
-  user_service_internal_key_previous:
-    file: ${USER_SERVICE_INTERNAL_KEY_PREVIOUS_FILE:?Provide the previous User Service key file (empty when not rotating)}
   event_service_cert:
     file: ${EVENT_SERVICE_CERT_FILE:?Provide the Event Service TLS certificate}
   event_service_key:
