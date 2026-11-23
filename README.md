@@ -148,3 +148,11 @@ The CI checks do not prove production readiness. Full API integration tests, hig
 - [Event Service implementation](docs/EVENT-SERVICE.md)
 
 Update the relevant documentation in the same pull request as any contract change. The docs must describe implemented behavior, not future scope as if it already exists.
+
+## Phase 2.1 — Security and reliability hardening
+
+The hardening PR adds signed, replay-protected Gateway assertions; API-level tests through the real Gateway and Event Service; User Service active-account validation for organizer invitations; occurrence cancellation and scheduled lifecycle transitions; transactional outbox retry/dead-letter operations; Prometheus metrics/alerts; and a production Compose overlay for private networks, Gateway-to-Event-Service mTLS, User Service HTTPS/internal-key rotation, and Kafka TLS/SASL.
+
+All three service dependency lockfiles are refreshed on semver-compatible versions and audited in CI. The Event Service and User Service test suites run against PostgreSQL/Redis-backed CI dependencies. Manual k6 scenarios are under `load-tests/`; they should run against a disposable staging environment. The GA contention scenario exercises Event Service ticket-type capacity configuration only. It does not claim to test live Inventory Service holds or purchase throughput; Inventory Service is still a later implementation phase.
+
+The production Compose overlay expects externally managed ingress, private networks, certificate/secret files and an independently operated Prometheus deployment. It is a hardened deployment starting point, not a turnkey production cluster.
