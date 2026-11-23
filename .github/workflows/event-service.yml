@@ -8,6 +8,10 @@ on:
       - 'load-tests/**'
       - 'monitoring/**'
       - 'docker-compose.production.yml'
+      - 'user-service/**'
+      - 'load-tests/**'
+      - 'monitoring/**'
+      - 'docker-compose.production.yml'
       - 'api-gateway/src/**'
       - 'api-gateway/.env.example'
       - 'shared/constants/**'
@@ -27,6 +31,10 @@ on:
       - 'phase-2.1/**'
     paths:
       - 'event-service/**'
+      - 'user-service/**'
+      - 'load-tests/**'
+      - 'monitoring/**'
+      - 'docker-compose.production.yml'
       - 'api-gateway/src/**'
       - 'api-gateway/.env.example'
       - 'shared/constants/**'
@@ -86,11 +94,28 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: event-service/package-lock.json
+      - name: Refresh semver-compatible dependency lockfiles
+        working-directory: .
+        run: |
+          for service in event-service api-gateway user-service; do
+            echo "Refreshing $service lockfile without major-version overrides"
+            (cd "$service" && npm audit fix --package-lock-only --ignore-scripts) || echo "Some advisories remain for $service; audit output below records them"
+          done
       - name: Install dependencies
         run: |
           npm ci
           npm ci --prefix ../api-gateway
           npm ci --prefix ../user-service
+      - name: Upload refreshed dependency lockfiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: ticketflow-dependency-lockfiles
+          path: |
+            event-service/package-lock.json
+            api-gateway/package-lock.json
+            user-service/package-lock.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Report dependency audit findings
         continue-on-error: true
         run: |
