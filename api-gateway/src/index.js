@@ -10,67 +10,63 @@ const { notFound } = require('./middlewares/notFound.middleware');
 const { reqLogger } = require('./middlewares/req.middleware');
 const { corsMiddleware } = require('./middlewares/cors.middleware');
 const routes = require('./routes');
+const { RedisClient } = require('./config/redis');
+
 const app = express();
-
-
 app.use(corsMiddleware);
-app.use(helmet({
-     crossOriginOpenerPolicy: false,
-     crossOriginEmbedderPolicy: false,
-}));
+app.use(helmet({ crossOriginOpenerPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(reqLogger);
 
-// Skip JSON parsing for Razorpay webhook — signature verification needs raw bytes
+// Keep the Razorpay webhook body raw so Payment Service can verify the exact signature bytes.
 app.use((req, res, next) => {
-     if (req.path === '/api/payments/webhooks/razorpay') {
-          return express.raw({ type: 'application/json', limit: '10mb' })(req, res, next);
-     }
-     express.json({ limit: '10mb' })(req, res, next);
+  if (req.path === '/api/payments/webhooks/razorpay') {
+    return express.raw({ type: 'application/json', limit: '10mb' })(req, res, next);
+  }
+  return express.json({ limit: '10mb' })(req, res, next);
 });
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb', parameterLimit: 100 }));
 app.use(cookieParser());
+if (config.NODE_ENV === 'development') app.use(morgan('dev'));
 
-if (config.NODE_ENV === 'development') {
-     app.use(morgan('dev'));
-}
-
-app.get('/health', (req, res) => {
-     res.status(200).json({
-          success: true,
-          message: 'API Gateway is running',
-          timestamp: new Date().toISOString(),
-          environment: config.NODE_ENV,
-     });
-});
-
+app.get('/health', (req, res) => res.status(200).json({
+  success: true,
+  message: 'API Gateway is running',
+  timestamp: new Date().toISOString(),
+  environment: config.NODE_ENV,
+}));
 app.use('/api', routes);
-
 app.use(notFound);
 app.use(errorHandler);
 
-const gracefulShutdown = () => {
-     logger.info('Received shutdown signal, closing server gracefully...');
-     server.close(() => {
-          logger.info('Server closed');
-          process.exit(0);
-     });
-
-     setTimeout(() => {
-          logger.error('Forced shutdown after timeout');
-          process.exit(1);
-     }, 30000);
+const startServer = (port = config.PORT) => {
+  const server = app.listen(port, () => {
+    logger.info(`API Gateway running on port ${server.address().port} in ${config.NODE_ENV} mode`);
+  });
+  if (require.main === module) {
+    let shuttingDown = false;
+    const shutdown = (signal) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      logger.info('Received ' + signal + ', closing API Gateway');
+      server.close(async () => {
+        await RedisClient.closeConnection();
+        process.exit(0);
+      });
+      const forceExit = setTimeout(() => {
+        logger.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 30000);
+      if (forceExit.unref) forceExit.unref();
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('unhandledRejection', (error) => {
+      logger.error('Unhandled rejection in API Gateway', { message: error.message });
+      shutdown('unhandledRejection');
+    });
+  }
+  return server;
 };
 
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
-
-const server = app.listen(config.PORT, () => {
-     logger.info(`🚀 API Gateway running on port ${config.PORT} in ${config.NODE_ENV} mode`);
-});
-
-process.on('unhandledRejection', (err) => {
-     logger.error('Unhandled Rejection:', err);
-     server.close(() => process.exit(1));
-});
-
-module.exports = app;
+if (require.main === module) startServer();
+module.exports = { app, startServer };
