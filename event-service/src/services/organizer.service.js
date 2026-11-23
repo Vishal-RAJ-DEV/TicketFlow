@@ -2,6 +2,7 @@ const { randomUUID } = require('crypto');
 const prisma = require('../config/prisma');
 const { BadRequestError, ForbiddenError, NotFoundError } = require('../utils/error');
 const { requireString, optionalString, optionalUrl, slugify } = require('../utils/validation');
+const { assertActiveUser } = require('./userDirectory.service');
 
 const MANAGEMENT_ROLES = ['OWNER', 'ADMIN'];
 const EDIT_ROLES = ['OWNER', 'ADMIN', 'EDITOR'];
@@ -111,6 +112,7 @@ const listMembers = async (organizerId, userId) => {
 const upsertMember = async (organizerId, actorId, data) => {
   await assertOrganizerAccess(prisma, organizerId, actorId, MANAGEMENT_ROLES);
   const userId = requireString(data.userId, 'userId', 80);
+  await assertActiveUser(userId);
   const role = data.role || 'VIEWER';
   if (!['ADMIN', 'EDITOR', 'VIEWER'].includes(role)) {
     throw new BadRequestError('role must be ADMIN, EDITOR, or VIEWER');

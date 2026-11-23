@@ -29,9 +29,14 @@ const config = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
 
-  INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY,
+  INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY || '',
+  INTERNAL_SERVICE_KEY_PREVIOUS: process.env.INTERNAL_SERVICE_KEY_PREVIOUS || '',
 }
 
+
+if (config.NODE_ENV === 'production' && (!config.INTERNAL_SERVICE_KEY || config.INTERNAL_SERVICE_KEY.length < 32)) {
+  throw new Error('INTERNAL_SERVICE_KEY must contain at least 32 characters in production');
+}
 
 if (!config.GOOGLE_CLIENT_ID) {
   throw new Error("GOOGLE_CLIENT_ID environment variable is required");
