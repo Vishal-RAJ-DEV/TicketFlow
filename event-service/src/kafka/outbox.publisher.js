@@ -11,7 +11,7 @@ let timer = null;
 const claimPendingEvents = async () => prisma.$queryRawUnsafe(
   'WITH candidates AS (' +
   ' SELECT id FROM outbox_events' +
-  ' WHERE "publishedAt" IS NULL AND "nextAttemptAt" <= NOW()' +
+  ' WHERE "publishedAt" IS NULL AND "deadLetteredAt" IS NULL AND "nextAttemptAt" <= NOW()' +
   " AND (\"lockedAt\" IS NULL OR \"lockedAt\" < NOW() - ($1 * INTERVAL '1 millisecond'))" +
   ' ORDER BY "createdAt" ASC LIMIT $2 FOR UPDATE SKIP LOCKED' +
   ')' +
@@ -35,19 +35,23 @@ const publishBatch = async () => {
       });
       logger.info('Published outbox event ' + event.eventType + ' (' + event.id + ')');
     } catch (error) {
+      const nextAttemptNumber = event.attempts + 1;
+      const shouldDeadLetter = nextAttemptNumber >= config.OUTBOX_MAX_ATTEMPTS;
       const exponentialCap = Math.min(300000, 1000 * (2 ** Math.min(event.attempts, 8)));
       const nextAttempt = Math.max(1000, Math.floor(exponentialCap * (0.5 + Math.random() * 0.5)));
       await prisma.outboxEvent.updateMany({
         where: { id: event.id, lockedBy: workerId, publishedAt: null },
         data: {
           attempts: { increment: 1 },
-          nextAttemptAt: new Date(Date.now() + nextAttempt),
+          nextAttemptAt: shouldDeadLetter ? new Date('9999-12-31T23:59:59.999Z') : new Date(Date.now() + nextAttempt),
           lockedAt: null,
           lockedBy: null,
+          deadLetteredAt: shouldDeadLetter ? new Date() : null,
           lastError: String(error.message || error).slice(0, 2000),
         },
       });
-      logger.error('Outbox publish failed for ' + event.id + ': ' + error.message);
+      if (shouldDeadLetter) logger.error('Outbox event moved to dead-letter state after ' + nextAttemptNumber + ' attempts', { eventId: event.id, eventType: event.eventType });
+      else logger.error('Outbox publish failed for ' + event.id + ': ' + error.message);
     }
   }
 };

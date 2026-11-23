@@ -1,6 +1,6 @@
 const prisma = require('../config/prisma');
 const { BadRequestError, ConflictError, NotFoundError } = require('../utils/error');
-const { parseDate } = require('../utils/validation');
+const { parseDate, optionalString } = require('../utils/validation');
 const { assertOrganizerAccess } = require('./organizer.service');
 const { createOutboxEvent } = require('./outbox.service');
 const { validateOccurrenceTicketAllocations } = require('../utils/gaCapacity');
@@ -266,10 +266,59 @@ const publishOccurrence = async (occurrenceId, userId) => {
   });
 };
 
+
+const cancelOccurrence = async (occurrenceId, userId, data = {}) => prisma.$transaction(async (tx) => {
+  await tx.$queryRaw`SELECT id FROM event_occurrences WHERE id = ${occurrenceId} FOR UPDATE`;
+  const occurrence = await tx.eventOccurrence.findUnique({
+    where: { id: occurrenceId },
+    include: {
+      event: { select: { id: true, organizerId: true, title: true, slug: true } },
+      venue: { select: { id: true, name: true, city: true, timezone: true } },
+    },
+  });
+  if (!occurrence) throw new NotFoundError('Event occurrence not found');
+  await assertOrganizerAccess(tx, occurrence.event.organizerId, userId, ['OWNER', 'ADMIN']);
+  if (occurrence.status === 'CANCELLED') return occurrence;
+  if (occurrence.status === 'COMPLETED') throw new ConflictError('A completed occurrence cannot be cancelled');
+  const reason = optionalString(data.reason, 'reason', 1000);
+  const now = new Date();
+  const changed = await tx.eventOccurrence.updateMany({
+    where: { id: occurrenceId, version: occurrence.version, status: occurrence.status },
+    data: { status: 'CANCELLED', cancelledAt: now, cancellationReason: reason || null, version: { increment: 1 } },
+  });
+  if (!changed.count) throw new ConflictError('Occurrence changed before cancellation; reload and retry');
+  const cancelled = await tx.eventOccurrence.findUnique({ where: { id: occurrenceId } });
+  await createOutboxEvent(tx, {
+    aggregateType: 'EVENT_OCCURRENCE',
+    aggregateId: cancelled.id,
+    aggregateVersion: cancelled.version,
+    eventType: 'event.occurrence-cancelled',
+    data: {
+      occurrence: {
+        id: cancelled.id,
+        eventId: cancelled.eventId,
+        venueId: cancelled.venueId,
+        startsAt: cancelled.startsAt,
+        endsAt: cancelled.endsAt,
+        previousStatus: occurrence.status,
+        status: cancelled.status,
+        version: cancelled.version,
+        cancelledAt: cancelled.cancelledAt,
+        cancellationReason: cancelled.cancellationReason,
+      },
+      event: occurrence.event,
+      venue: occurrence.venue,
+      reason: cancelled.cancellationReason,
+    },
+  });
+  return cancelled;
+});
+
 module.exports = {
   createOccurrence,
   listOccurrences,
   getOccurrence,
   updateOccurrence,
   publishOccurrence,
+  cancelOccurrence,
 };

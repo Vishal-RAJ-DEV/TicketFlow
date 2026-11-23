@@ -24,6 +24,10 @@ const KAFKA_TOPICS = {
      EVENT_UPDATED: 'event.updated',
      EVENT_CANCELLED: 'event.cancelled',
      EVENT_OCCURRENCE_PUBLISHED: 'event.occurrence-published',
+     EVENT_OCCURRENCE_CANCELLED: 'event.occurrence-cancelled',
+     EVENT_OCCURRENCE_SALES_OPENED: 'event.occurrence-sales-opened',
+     EVENT_OCCURRENCE_SALES_CLOSED: 'event.occurrence-sales-closed',
+     EVENT_OCCURRENCE_COMPLETED: 'event.occurrence-completed',
      VENUE_LAYOUT_VERSION_PUBLISHED: 'venue.layout-version-published',
 
      // Inventory topics (inventory-service -> search-service)

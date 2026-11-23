@@ -215,6 +215,8 @@ model EventOccurrence {
   status               OccurrenceStatus @default(DRAFT)
   version              Int              @default(1)
   publishedAt          DateTime?        @db.Timestamptz(3)
+  cancelledAt          DateTime?        @db.Timestamptz(3)
+  cancellationReason   String?
   createdAt            DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
 
@@ -285,11 +287,13 @@ model OutboxEvent {
   lockedAt         DateTime? @db.Timestamptz(3)
   lockedBy         String?
   lastError        String?
+  deadLetteredAt   DateTime? @db.Timestamptz(3)
   createdAt        DateTime  @default(now()) @db.Timestamptz(3)
 
   @@index([publishedAt, nextAttemptAt])
   @@index([aggregateId, aggregateVersion])
   @@index([lockedAt])
+  @@index([publishedAt, deadLetteredAt, nextAttemptAt])
   @@map("outbox_events")
 }
 model GatewayRequestNonce {
