@@ -99,6 +99,24 @@ test('User Service accepts a valid session-bound token and rejects missing or mi
   });
 });
 
+test('User Service rejects a token replayed with a different browser session', async () => {
+  await withServer(createApp(), async (baseUrl) => {
+    const bootstrap = await fetch(baseUrl + '/csrf');
+    const cookie = getCookieHeader(bootstrap);
+    const csrfToken = (await bootstrap.json()).csrfToken;
+    const changedSession = cookie.replace(
+      new RegExp(SESSION_COOKIE_NAME + '=[^;]+'),
+      SESSION_COOKIE_NAME + '=' + randomBytes(32).toString('base64url')
+    );
+
+    const response = await fetch(baseUrl + '/write', {
+      method: 'POST',
+      headers: { Cookie: changedSession, 'X-CSRF-Token': csrfToken },
+    });
+    assert.equal(response.status, 403);
+  });
+});
+
 test('User Service CSRF guard preserves Bearer clients and safe methods', async () => {
   await withServer(createApp(), async (baseUrl) => {
     const bearer = await fetch(baseUrl + '/bearer-write', {
