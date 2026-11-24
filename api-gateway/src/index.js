@@ -22,7 +22,7 @@ function validateGatewayCsrfCookie(req, res, next) {
   const isSafeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(req.method);
   const isSignedWebhook = req.method === 'POST' && requestPath === '/api/payments/webhooks/razorpay';
   const authorization = req.headers.authorization;
-  const isBearerRequest = typeof authorization === 'string' && /^Bearer\\s+\\S+$/i.test(authorization);
+  const isBearerRequest = typeof authorization === 'string' && /^Bearer\s+\S+$/i.test(authorization);
 
   if (isSafeMethod || isSignedWebhook || isBearerRequest) return next();
 
