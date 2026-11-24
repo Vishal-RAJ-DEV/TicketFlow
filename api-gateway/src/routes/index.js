@@ -1,10 +1,21 @@
 const express = require('express');
 const { requireAuth } = require('../middlewares/auth.middleware');
+const { rateLimit } = require('express-rate-limit');
 const { createProxy, getCircuitBreakerStatus } = require('../services/proxy');
 const { ipRateLimit, endpointRateLimit, combinedRateLimit } = require('../middlewares/rateLimiting.middleware')
 const { config } = require('../config');
 const { validateCsrfDoubleSubmit, doubleCsrfProtection } = require('../middlewares/csrf.middleware');
 const csrfProtection = [validateCsrfDoubleSubmit, doubleCsrfProtection];
+
+// Express-local quota is defense in depth and is recognized by static analysis.
+// Redis-backed combinedRateLimit remains the cross-replica enforcement layer.
+const authorizationRateLimit = rateLimit({
+     windowMs: 15 * 60 * 1000,
+     limit: 300,
+     standardHeaders: 'draft-8',
+     legacyHeaders: false,
+     message: { success: false, code: 'TOO_MANY_REQUESTS', message: 'Too many requests' },
+});
 
 const router = express.Router();
 
@@ -55,6 +66,7 @@ router.post(
 router.get(
      '/users/user/profile',
      combinedRateLimit(),
+     authorizationRateLimit,
      requireAuth,
      userServiceProxy
 )
@@ -63,6 +75,7 @@ router.put(
      '/users/user/profile',
      ...csrfProtection,
      combinedRateLimit(),
+     authorizationRateLimit,
      requireAuth,
      userServiceProxy
 )
@@ -71,6 +84,7 @@ router.delete(
      '/users/user/profile',
      ...csrfProtection,
      combinedRateLimit(),
+     authorizationRateLimit,
      requireAuth,
      userServiceProxy
 )
@@ -81,7 +95,7 @@ const eventRoute = (method, path, authenticated = true, limiter = combinedRateLi
      const isStateChanging = ['post', 'put', 'patch', 'delete'].includes(method);
      const csrfHandlers = isStateChanging ? csrfProtection : [];
      const handlers = authenticated
-          ? [...csrfHandlers, limiter, requireAuth, eventServiceProxy]
+          ? [...csrfHandlers, limiter, authorizationRateLimit, requireAuth, eventServiceProxy]
           : [limiter, ...csrfHandlers, eventServiceProxy];
      router[method](path, ...handlers);
 };
@@ -169,6 +183,7 @@ router.get(
 router.get(
      '/inventory/schedules/:scheduleId/seats',
      combinedRateLimit(),
+     authorizationRateLimit,
      requireAuth,
      inventoryServiceProxy
 );
@@ -185,6 +200,7 @@ router.post(
      '/bookings/bookings',
      ...csrfProtection,
      endpointRateLimit(5, 60000), // 5 booking attempts per minute
+     authorizationRateLimit,
      requireAuth,
      bookingServiceProxy
 );
@@ -192,6 +208,7 @@ router.post(
 router.get(
      '/bookings/bookings',
      combinedRateLimit(),
+     authorizationRateLimit,
      requireAuth,
      bookingServiceProxy
 );
@@ -199,6 +216,7 @@ router.get(
 router.get(
      '/bookings/bookings/:bookingId',
      combinedRateLimit(),
+     authorizationRateLimit,
      requireAuth,
      bookingServiceProxy
 );
@@ -207,6 +225,7 @@ router.post(
      '/bookings/bookings/:bookingId/verify-payment',
      ...csrfProtection,
      combinedRateLimit(),
+     authorizationRateLimit,
      requireAuth,
      bookingServiceProxy
 );
@@ -215,6 +234,7 @@ router.post(
      '/bookings/bookings/:bookingId/cancel',
      ...csrfProtection,
      combinedRateLimit(),
+     authorizationRateLimit,
      requireAuth,
      bookingServiceProxy
 );
