@@ -41,6 +41,12 @@ test('validates chronological time windows', () => {
   assert.throws(() => validateTimeWindow('2026-12-01T12:00:00Z', '2026-12-01T10:00:00Z', 'start', 'end'), /must be after/);
 });
 
+test('slugifies very long separator runs in linear time without regex backtracking', () => {
+  const input = 'A'.repeat(64) + '-'.repeat(200000) + 'B';
+  assert.equal(slugify(input), 'a'.repeat(64) + '-b');
+  assert.equal(slugify('---Café---Music---'), 'cafe-music');
+});
+
 test('creates URL-safe slugs and normalizes accents', () => {
   assert.equal(slugify('Live Music & Arts Festival'), 'live-music-arts-festival');
   assert.equal(slugify('Café Music & Arts'), 'cafe-music-arts');
