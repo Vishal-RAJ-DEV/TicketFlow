@@ -90,7 +90,9 @@ The current implementation records the initial `SCHEDULED` or `ON_SALE` state at
 - Eligible section IDs must exist in the occurrence's published layout snapshot and match the ticket type mode.
 - `minPerOrder` and `maxPerOrder` must be positive and max cannot be lower than min.
 - Ticket-type sales windows must be contained within the occurrence sales window.
-- Ticket types become immutable after occurrence publication. Configure them before publishing the occurrence.
+- Ticket type name, price, capacity, section allocations and sales windows are immutable after occurrence publication.
+- OWNER and ADMIN members can pause or resume a published ticket type while its occurrence is `SCHEDULED` or `ON_SALE`. Only `ACTIVE ↔ PAUSED` is allowed after publication; `ARCHIVED` remains a pre-publication configuration state.
+- A published status change increments the ticket-type version and writes `event.ticket-type-status-changed` to the transactional outbox in the same transaction. Repeating the current status is idempotent and emits no duplicate event.
 
 Event Service is authoritative for configured prices and sales rules. Inventory Service will materialize this configuration and own current availability, holds and sold quantities in a later phase.
 
@@ -137,7 +139,7 @@ All authenticated routes require the gateway JWT and organizer-level authorizati
 | POST | `/occurrences/:occurrenceId/publish` | Publish occurrence |
 | POST/GET | `/ticket-types/occurrences/:occurrenceId` | Create/list ticket types |
 | PATCH | `/ticket-types/:ticketTypeId` | Update draft ticket type |
-| PATCH | `/ticket-types/:ticketTypeId/status` | Change draft ticket type status |
+| PATCH | `/ticket-types/:ticketTypeId/status` | Change draft status or pause/resume a published ticket type |
 | GET | `/catalog` | Public published-event catalog |
 | GET | `/catalog/:slug` | Public event detail |
 
@@ -159,6 +161,7 @@ Gateway route prefixes are intentionally shaped so its existing proxy strips the
 | `event.cancelled` | Organizer cancels an event | Event ID |
 | `event.occurrence-published` | Occurrence is published | Occurrence ID |
 | `venue.layout-version-published` | Layout snapshot is published | Layout version ID |
+| `event.ticket-type-status-changed` | Published ticket type is paused or resumed | Ticket type ID |
 
 Each event uses the shared envelope with `eventId`, `eventType`, `eventVersion`, `occurredAt`, `producer`, `aggregate` and `data`.
 
@@ -194,7 +197,7 @@ Implemented in this phase: catalog/configuration ownership, organizer membership
 
 Not implemented here: inventory materialization/availability, seat locking/holds, GA runtime shards, order/Saga, payment/refunds, Queue Service, Ticket Service, search projection and customer frontend conversion. Event Service does enforce the configured GA section-capacity allocation contract before publication; it does not track live sold/held quantities. These remain owned by later phases.
 
-The current catalog lifecycle records initial occurrence publication state. Automated scheduled status transitions, individual occurrence cancellation, runtime ticket-type pause after publication and Inventory enforcement remain future work; consumers must rely on explicit timestamps and the authoritative Inventory Service once it is implemented.
+The current catalog lifecycle records initial occurrence publication state and the lifecycle worker advances scheduled occurrence statuses. Individual occurrence cancellation and published ticket-type pause/resume are implemented. Inventory enforcement remains future work; the Inventory Service must consume occurrence publication and ticket-type status events and enforce current availability and sales policy.
 
  
 ## 11. Occurrence lifecycle and cancellation operations
@@ -207,6 +210,8 @@ The lifecycle worker polls published occurrences and advances:
 - `SCHEDULED/ON_SALE/SALES_CLOSED → COMPLETED` when `endsAt` is reached.
 
 Each transition is row-locked, version-checked and recorded in the transactional outbox as `event.occurrence-sales-opened`, `event.occurrence-sales-closed` or `event.occurrence-completed`. The worker is eventually consistent at its configured polling interval; downstream sales/Inventory enforcement must still check authoritative time windows.
+
+Published ticket types can be paused/resumed through `PATCH /ticket-types/:ticketTypeId/status` (Gateway path: `/api/events/ticket-types/:ticketTypeId/status`). OWNER/ADMIN authorization is required. Only `ACTIVE` and `PAUSED` transitions are supported after publication, and only while the occurrence is `SCHEDULED` or `ON_SALE`. A transition emits `event.ticket-type-status-changed` through the transactional outbox. The event tells future Inventory consumers to stop or resume new holds; it does not release existing holds or cancel completed orders.
 
 ## 12. Outbox operational endpoints and alerting
 
