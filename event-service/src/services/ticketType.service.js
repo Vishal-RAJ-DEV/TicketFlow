@@ -9,6 +9,8 @@ const {
   normalizeCurrency,
 } = require('../utils/validation');
 const { assertOrganizerAccess } = require('./organizer.service');
+const { createOutboxEvent } = require('./outbox.service');
+const { KAFKA_TOPICS } = require('../../../shared/constants/kafka-topics');
 
 const lockOccurrence = async (tx, occurrenceId) => {
   // Serializes every inventory configuration mutation for one occurrence.
@@ -400,17 +402,63 @@ const updateTicketTypeStatus = async (ticketTypeId, userId, status) => {
     });
     if (!ticketType) throw new NotFoundError('Ticket type not found');
     await assertOrganizerAccess(tx, ticketType.occurrence.event.organizerId, userId, ['OWNER', 'ADMIN']);
-    if (ticketType.occurrence.status !== 'DRAFT') {
-      throw new ConflictError('Ticket type status cannot be changed after occurrence publication');
-    }
-    if (status !== 'ARCHIVED' && ticketType.status === 'ARCHIVED') {
-      await validateReactivationCapacity(tx, ticketType.occurrence, ticketType);
+
+    // Idempotent no-op: avoid a version bump and duplicate event for repeated requests.
+    if (ticketType.status === status) {
+      return { ...ticketType, priceMinorUnits: ticketType.priceMinorUnits.toString() };
     }
 
-    const updated = await tx.ticketType.update({
-      where: { id: ticketTypeId },
+    const occurrenceStatus = ticketType.occurrence.status;
+    const isDraft = occurrenceStatus === 'DRAFT';
+
+    if (isDraft) {
+      if (status !== 'ARCHIVED' && ticketType.status === 'ARCHIVED') {
+        await validateReactivationCapacity(tx, ticketType.occurrence, ticketType);
+      }
+    } else {
+      // Published ticket configuration is immutable; only pause/resume is allowed
+      // while new sales are still possible.
+      if (!['SCHEDULED', 'ON_SALE'].includes(occurrenceStatus)) {
+        throw new ConflictError('Ticket type sales cannot be changed after the occurrence sales window has closed or the occurrence is terminal');
+      }
+      if (!['ACTIVE', 'PAUSED'].includes(ticketType.status) || !['ACTIVE', 'PAUSED'].includes(status)) {
+        throw new ConflictError('Published ticket types can only transition between ACTIVE and PAUSED');
+      }
+    }
+
+    const changed = await tx.ticketType.updateMany({
+      where: { id: ticketTypeId, version: ticketType.version },
       data: { status, version: { increment: 1 } },
     });
+    if (!changed.count) {
+      throw new ConflictError('Ticket type was modified by another request; reload it and retry');
+    }
+
+    const updated = await tx.ticketType.findUnique({ where: { id: ticketTypeId } });
+    if (!isDraft) {
+      await createOutboxEvent(tx, {
+        aggregateType: 'TICKET_TYPE',
+        aggregateId: updated.id,
+        aggregateVersion: updated.version,
+        eventType: KAFKA_TOPICS.EVENT_TICKET_TYPE_STATUS_CHANGED,
+        data: {
+          previousStatus: ticketType.status,
+          occurrence: {
+            id: ticketType.occurrence.id,
+            eventId: ticketType.occurrence.eventId,
+            status: ticketType.occurrence.status,
+            version: ticketType.occurrence.version,
+          },
+          ticketType: {
+            id: updated.id,
+            occurrenceId: updated.occurrenceId,
+            status: updated.status,
+            version: updated.version,
+          },
+        },
+      });
+    }
+
     return { ...updated, priceMinorUnits: updated.priceMinorUnits.toString() };
   });
 };
