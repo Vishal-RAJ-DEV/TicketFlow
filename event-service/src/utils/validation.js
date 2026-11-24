@@ -122,14 +122,28 @@ const validateTimezone = (timezone) => {
   return value;
 };
 
-const slugify = (value) => value
-  .normalize('NFKD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase()
-  .trim()
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '')
-  .slice(0, 80) || 'event';
+const slugify = (value) => {
+  const normalized = value.normalize('NFKD').toLowerCase().trim();
+  let slug = '';
+  let pendingSeparator = false;
+
+  // One pass avoids ambiguous repeated regex matching on attacker-controlled input.
+  for (const character of normalized) {
+    const code = character.charCodeAt(0);
+    const isAsciiLetter = code >= 97 && code <= 122;
+    const isAsciiDigit = code >= 48 && code <= 57;
+
+    if (isAsciiLetter || isAsciiDigit) {
+      if (pendingSeparator && slug.length > 0) slug += '-';
+      slug += character;
+      pendingSeparator = false;
+    } else if (slug.length > 0) {
+      pendingSeparator = true;
+    }
+  }
+
+  return slug.slice(0, 80) || 'event';
+};
 
 const validateTimeWindow = (start, end, startField, endField) => {
   const startDate = parseDate(start, startField);
