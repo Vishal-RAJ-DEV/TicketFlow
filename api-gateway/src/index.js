@@ -12,7 +12,34 @@ const { corsMiddleware } = require('./middlewares/cors.middleware');
 const routes = require('./routes');
 const { RedisClient } = require('./config/redis');
 const { endpointRateLimit } = require('./middlewares/rateLimiting.middleware');
-const { ensureCsrfSession, generateCsrfToken, setCsrfTokenCookie, validateCsrfDoubleSubmit, doubleCsrfProtection } = require('./middlewares/csrf.middleware');
+const { ensureCsrfSession, generateCsrfToken, setCsrfTokenCookie, doubleCsrfProtection } = require('./middlewares/csrf.middleware');
+
+// Inline CSRF validation is deliberately kept at the Gateway boundary so every
+// cookie-authenticated unsafe route is guarded before auth middleware reads cookies.
+// The csrf-csrf middleware below additionally verifies the signed HMAC and session.
+function validateGatewayCsrfCookie(req, res, next) {
+  const requestPath = (req.originalUrl || req.url || '').split('?')[0];
+  const isSafeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  const isSignedWebhook = req.method === 'POST' && requestPath === '/api/payments/webhooks/razorpay';
+  const authorization = req.headers.authorization;
+  const isBearerRequest = typeof authorization === 'string' && /^Bearer\\s+\\S+$/i.test(authorization);
+
+  if (isSafeMethod || isSignedWebhook || isBearerRequest) return next();
+
+  const csrfCookie =
+    (req.cookies && req.cookies['x-csrf-token']) ||
+    (req.cookies && req.cookies['__Host-psifi.x-csrf-token']);
+  const csrfHeader = req.headers['x-csrf-token'];
+  req.csrfHeaderMatchesCookie = csrfCookie === csrfHeader;
+
+  if (typeof csrfCookie !== 'string' || typeof csrfHeader !== 'string' || !req.csrfHeaderMatchesCookie) {
+    const error = new Error('Invalid CSRF token');
+    error.statusCode = 403;
+    error.code = 'EBADCSRFTOKEN';
+    return next(error);
+  }
+  return next();
+}
 
 const app = express();
 app.use(corsMiddleware);
@@ -40,7 +67,7 @@ app.get('/api/csrf', endpointRateLimit(60, 60000), (req, res) => {
 });
 // Register the custom cookie/header CSRF guard globally so every unsafe handler is covered.
 // The signed csrf-csrf middleware then verifies the HMAC and browser-session binding for API routes.
-app.use(validateCsrfDoubleSubmit);
+app.use(validateGatewayCsrfCookie);
 app.use('/api', doubleCsrfProtection);
 
 app.get('/health', (req, res) => res.status(200).json({
