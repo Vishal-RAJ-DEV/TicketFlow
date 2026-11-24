@@ -165,7 +165,7 @@ Gateway route prefixes are intentionally shaped so its existing proxy strips the
 
 Each event uses the shared envelope with `eventId`, `eventType`, `eventVersion`, `occurredAt`, `producer`, `aggregate` and `data`.
 
-The source database update and outbox insert commit in one Prisma transaction. A worker claims due outbox records using PostgreSQL `FOR UPDATE SKIP LOCKED`, sends to Kafka, then marks the record published. On failure it records the error, releases the claim and schedules bounded exponential retry with jitter. Delivery is at-least-once. Outbox age/attempt metrics, poison-event operator tooling and a dead-letter workflow are still operational follow-ups.
+The source database update and outbox insert commit in one Prisma transaction. A worker claims due outbox records using PostgreSQL `FOR UPDATE SKIP LOCKED`, sends to Kafka, then marks the record published. On failure it records the error, releases the claim and schedules bounded exponential retry with jitter. Delivery is at-least-once. The hardening implementation adds pending-age/attempt metrics, protected operations endpoints for status and dead-letter inspection/retry, and Prometheus alert rules. The Prometheus server and alert delivery infrastructure remain externally operated; see sections 12–13.
 
 Kafka delivery remains at-least-once: a process may crash after Kafka acknowledgement but before the database records `publishedAt`. Downstream consumers must deduplicate using `eventId` / Inbox records. The local Compose broker auto-creates topics for development; production topics, partitions, replication and ACLs must be provisioned explicitly.
 
