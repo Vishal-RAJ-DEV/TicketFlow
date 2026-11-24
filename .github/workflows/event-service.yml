@@ -12,6 +12,9 @@ on:
       - 'monitoring/**'
       - 'docker-compose.production.yml'
       - 'api-gateway/src/**'
+      - 'api-gateway/test/**'
+      - 'api-gateway/package.json'
+      - 'api-gateway/package-lock.json'
       - 'api-gateway/.env.example'
       - 'shared/constants/**'
       - 'shared/utils/**'
@@ -37,6 +40,9 @@ on:
       - 'monitoring/**'
       - 'docker-compose.production.yml'
       - 'api-gateway/src/**'
+      - 'api-gateway/test/**'
+      - 'api-gateway/package.json'
+      - 'api-gateway/package-lock.json'
       - 'api-gateway/.env.example'
       - 'shared/constants/**'
       - 'shared/utils/**'
@@ -85,6 +91,7 @@ jobs:
       JWT_ACCESS_SECRET: ci-only-access-secret-that-is-at-least-32-characters
       JWT_REFRESH_SECRET: ci-only-refresh-secret-that-is-at-least-32-characters
       GATEWAY_ASSERTION_SECRET: ci-only-gateway-assertion-secret-that-is-at-least-32-characters
+      CSRF_SECRET: ci-only-csrf-hmac-secret-that-is-at-least-32-characters
       USER_SERVICE_INTERNAL_KEY: ci-only-user-service-internal-key-that-is-at-least-32-characters
     steps:
       - name: Checkout repository
@@ -125,9 +132,12 @@ jobs:
         run: |
           while IFS= read -r file; do
             node --check "$file"
-          done < <(find src test ../api-gateway/src ../shared ../user-service/src ../user-service/test ../scripts -type f -name '*.js' -print)
+          done < <(find src test ../api-gateway/src ../api-gateway/test ../shared ../user-service/src ../user-service/test ../scripts -type f -name '*.js' -print)
       - name: Run Event Service unit and integration tests
         run: npm test
+      - name: Run API Gateway CSRF tests
+        working-directory: .
+        run: npm test --prefix api-gateway
       - name: Run User Service internal authentication tests
         working-directory: .
         run: npm test --prefix user-service
