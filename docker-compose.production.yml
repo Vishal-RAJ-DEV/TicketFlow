@@ -21,6 +21,7 @@ services:
       JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
       JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
       GATEWAY_ASSERTION_SECRET_FILE: /run/secrets/gateway_assertion_secret
+      CSRF_SECRET_FILE: /run/secrets/csrf_secret
       EVENT_SERVICE_URL: https://event-service:4003
       EVENT_SERVICE_TLS_CA_FILE: /run/secrets/event_service_ca
       EVENT_SERVICE_TLS_CLIENT_CERT_FILE: /run/secrets/gateway_client_cert
@@ -40,6 +41,7 @@ services:
       - jwt_access_secret
       - jwt_refresh_secret
       - gateway_assertion_secret
+      - csrf_secret
       - event_service_ca
       - gateway_client_cert
       - gateway_client_key
@@ -119,6 +121,8 @@ secrets:
     file: ${JWT_REFRESH_SECRET_FILE:?Provide the API Gateway refresh-token secret file}
   gateway_assertion_secret:
     file: ${GATEWAY_ASSERTION_SECRET_FILE:?Provide the shared Gateway assertion secret file}
+  csrf_secret:
+    file: ${CSRF_SECRET_FILE:?Provide a separate API Gateway CSRF HMAC secret file}
   gateway_assertion_secret_previous:
     file: ${GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE:?Provide the previous assertion secret file (empty when not rotating)}
   event_database_url:
