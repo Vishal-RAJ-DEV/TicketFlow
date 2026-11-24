@@ -3,6 +3,8 @@ const { requireAuth } = require('../middlewares/auth.middleware');
 const { createProxy, getCircuitBreakerStatus } = require('../services/proxy');
 const { ipRateLimit, endpointRateLimit, combinedRateLimit } = require('../middlewares/rateLimiting.middleware')
 const { config } = require('../config');
+const { validateCsrfDoubleSubmit, doubleCsrfProtection } = require('../middlewares/csrf.middleware');
+const csrfProtection = [validateCsrfDoubleSubmit, doubleCsrfProtection];
 
 const router = express.Router();
 
@@ -22,30 +24,35 @@ const userServiceProxy = createProxy('userService', config.SERVICES.USER_SERVICE
 router.post(
      '/users/auth/send-otp',
      endpointRateLimit(5, 3600000), // 5 requests per hour
+     ...csrfProtection,
      userServiceProxy
 );
 
 router.post(
      '/users/auth/verify-otp',
      endpointRateLimit(10, 3600000), // 10 requests per hour
+     ...csrfProtection,
      userServiceProxy
 );
 
 router.post(
      '/users/auth/login',
      endpointRateLimit(100, 900000),// 100 requests per 15 minutes
+     ...csrfProtection,
      userServiceProxy
 );
 
 router.post(
      '/users/auth/google-auth',
      endpointRateLimit(10, 900000), // 10 requests per 15 minutes
+     ...csrfProtection,
      userServiceProxy
 );
 
 router.post(
      '/users/auth/refresh',
      endpointRateLimit(20, 900000), // 20 requests per 15 minutes
+     ...csrfProtection,
      userServiceProxy
 );
 
@@ -61,6 +68,7 @@ router.put(
      '/users/user/profile',
      requireAuth,
      combinedRateLimit(),
+     ...csrfProtection,
      userServiceProxy
 )
 
@@ -68,15 +76,18 @@ router.delete(
      '/users/user/profile',
      requireAuth,
      combinedRateLimit(),
+     ...csrfProtection,
      userServiceProxy
 )
 
 const eventServiceProxy = createProxy('eventService', config.SERVICES.EVENT_SERVICE_URL, { gatewayAssertion: true });
 
 const eventRoute = (method, path, authenticated = true, limiter = combinedRateLimit()) => {
+     const isStateChanging = ['post', 'put', 'patch', 'delete'].includes(method);
+     const csrfHandlers = isStateChanging ? csrfProtection : [];
      const handlers = authenticated
-          ? [requireAuth, limiter, eventServiceProxy]
-          : [limiter, eventServiceProxy];
+          ? [requireAuth, limiter, ...csrfHandlers, eventServiceProxy]
+          : [limiter, ...csrfHandlers, eventServiceProxy];
      router[method](path, ...handlers);
 };
 
@@ -179,6 +190,7 @@ router.post(
      '/bookings/bookings',
      requireAuth,
      endpointRateLimit(5, 60000), // 5 booking attempts per minute
+     ...csrfProtection,
      bookingServiceProxy
 );
 
@@ -200,6 +212,7 @@ router.post(
      '/bookings/bookings/:bookingId/verify-payment',
      requireAuth,
      combinedRateLimit(),
+     ...csrfProtection,
      bookingServiceProxy
 );
 
@@ -207,6 +220,7 @@ router.post(
      '/bookings/bookings/:bookingId/cancel',
      requireAuth,
      combinedRateLimit(),
+     ...csrfProtection,
      bookingServiceProxy
 );
 
@@ -218,6 +232,7 @@ const paymentServiceProxy = createProxy('paymentService', config.SERVICES.PAYMEN
 // Razorpay webhook (public — no auth, signature-verified by payment-service)
 router.post(
      '/payments/webhooks/razorpay',
+     ...csrfProtection,
      paymentServiceProxy
 );
 
