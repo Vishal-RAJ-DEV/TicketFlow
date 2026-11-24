@@ -126,8 +126,15 @@ jobs:
             node scripts/report-npm-audit.js "$full_report" "$service" full
 
             echo "===== Production dependency audit: $service ====="
+            production_dir="$RUNNER_TEMP/$service-production-dependencies"
             production_report="$RUNNER_TEMP/$service-production-audit.json"
-            (cd "$GITHUB_WORKSPACE/$service" && npm audit --omit=dev --json > "$production_report") || true
+            mkdir -p "$production_dir"
+            cp "$GITHUB_WORKSPACE/$service/package.json" "$production_dir/package.json"
+            cp "$GITHUB_WORKSPACE/$service/package-lock.json" "$production_dir/package-lock.json"
+            # Build an isolated production-only lockfile. This removes dev-only
+            # tooling (for example the Prisma CLI) without mutating the committed lockfile.
+            (cd "$production_dir" && npm install --package-lock-only --omit=dev --ignore-scripts --no-audit --no-fund)
+            (cd "$production_dir" && npm audit --package-lock-only --json > "$production_report") || true
             node scripts/report-npm-audit.js "$production_report" "$service" production
           done
       - name: Validate Prisma schema
