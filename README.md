@@ -128,16 +128,19 @@ Business and catalog endpoints require a valid signed API Gateway assertion; cal
 
 ## Validation and tests
 
-The Event Service CI workflow runs:
+The Event Service CI workflow runs against the dependency lockfiles committed to the branch:
 
-1. Dependency installation with `npm ci`.
-2. Prisma schema validation.
-3. All PostgreSQL migrations against a clean PostgreSQL 15 database.
-4. JavaScript syntax checks for Event Service, API Gateway and shared code.
-5. Unit tests for date/currency validation, signed gateway assertions and GA allocation rules.
-6. Docker Compose configuration validation and Event Service image build.
+1. `npm ci` for Event Service, API Gateway and User Service.
+2. Full and production-only `npm audit` reports for all three services. HIGH/CRITICAL production dependency findings fail CI.
+3. Prisma schema validation, PostgreSQL 15 migrations and Prisma Client generation.
+4. JavaScript syntax checks for Event Service, API Gateway, User Service and shared code.
+5. Event Service unit and PostgreSQL integration tests, including the Gateway trust boundary, GA capacity races, occurrence lifecycle/cancellation, published ticket pause/resume and dead-letter recovery.
+6. User Service internal-auth tests.
+7. Development and production-overlay Compose validation and Event Service image build.
 
-The CI checks do not prove production readiness. Full API integration tests, high-concurrency load tests, security scanning, observability dashboards, outbox poison-event operations and production network/TLS hardening remain separate work.
+The separate CodeQL workflow performs JavaScript/TypeScript static analysis on pushes, pull requests and a weekly schedule.
+
+The CI checks do not prove production readiness. The k6 scenarios under `load-tests/` are manual tests for a disposable staging environment; they have not been run by CI and do not test live Inventory holds or purchase throughput. Production certificate/secret provisioning, external Prometheus/Alertmanager operation, Kafka/Redis failover, and full end-to-end purchase testing remain deployment/staging work.
 
 ## Architecture documentation
 
