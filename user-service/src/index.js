@@ -19,7 +19,7 @@ const { doubleCsrfProtection } = require('./middlewares/csrf.middleware');
 // and binds it to the Gateway-issued browser session cookie.
 function validateUserServiceCsrfCookie(req, res, next) {
      const authorization = req.headers.authorization;
-     const isBearerRequest = typeof authorization === 'string' && /^Bearer\\s+\\S+$/i.test(authorization);
+     const isBearerRequest = typeof authorization === 'string' && /^Bearer\s+\S+$/i.test(authorization);
      if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || isBearerRequest) return next();
 
      const csrfCookie =
