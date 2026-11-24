@@ -1,7 +1,7 @@
 name: Event Service CI
 
 permissions:
-  contents: write
+  contents: read
 
 on:
   pull_request:
@@ -22,7 +22,9 @@ on:
       - 'docs/KAFKA-EVENT-CONTRACTS.md'
       - 'docs/DATABASE-DESIGN.md'
       - 'docs/DOMAIN-MODEL.md'
+      - 'scripts/**'
       - '.github/workflows/event-service.yml'
+      - '.github/workflows/codeql.yml'
   push:
     branches:
       - main
@@ -93,53 +95,25 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: event-service/package-lock.json
-      - name: Refresh semver-compatible dependency lockfiles
-        working-directory: .
-        run: |
-          for service in event-service api-gateway user-service; do
-            echo "Refreshing $service lockfile without major-version overrides"
-            (cd "$service" && npm audit fix --package-lock-only --ignore-scripts) || echo "Some advisories remain for $service; audit output below records them"
-          done
       - name: Install dependencies
         run: |
           npm ci
           npm ci --prefix ../api-gateway
           npm ci --prefix ../user-service
-      - name: Upload refreshed dependency lockfiles
-        uses: actions/upload-artifact@v4
-        with:
-          name: ticketflow-dependency-lockfiles
-          path: |
-            event-service/package-lock.json
-            api-gateway/package-lock.json
-            user-service/package-lock.json
-          if-no-files-found: error
-          retention-days: 7
-      - name: Report dependency audit findings
-        continue-on-error: true
+      - name: Audit committed dependency lockfiles
         working-directory: .
         run: |
+          set -euo pipefail
           for service in event-service api-gateway user-service; do
             echo "===== Full dependency audit: $service ====="
-            (cd "$GITHUB_WORKSPACE/$service" && npm audit --json > "$RUNNER_TEMP/$service-audit.json") || true
-            node - "$RUNNER_TEMP/$service-audit.json" "$service" <<'NODE'
-            const fs = require('node:fs');
-            const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-            console.log(process.argv[3], 'full audit:', JSON.stringify(report.metadata?.vulnerabilities || {}));
-            for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
-              console.log(JSON.stringify({ name, severity: item.severity, range: item.range, isDirect: item.isDirect, fixAvailable: item.fixAvailable }));
-            }
-            NODE
-            echo "===== Production-only dependency audit: $service ====="
-            (cd "$GITHUB_WORKSPACE/$service" && npm audit --omit=dev --json > "$RUNNER_TEMP/$service-production-audit.json") || true
-            node - "$RUNNER_TEMP/$service-production-audit.json" "$service" <<'NODE'
-            const fs = require('node:fs');
-            const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-            console.log(process.argv[3], 'production-only audit:', JSON.stringify(report.metadata?.vulnerabilities || {}));
-            for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
-              console.log(JSON.stringify({ name, severity: item.severity, range: item.range, fixAvailable: item.fixAvailable }));
-            }
-            NODE
+            full_report="$RUNNER_TEMP/$service-full-audit.json"
+            (cd "$GITHUB_WORKSPACE/$service" && npm audit --json > "$full_report") || true
+            node scripts/report-npm-audit.js "$full_report" "$service" full
+
+            echo "===== Production dependency audit: $service ====="
+            production_report="$RUNNER_TEMP/$service-production-audit.json"
+            (cd "$GITHUB_WORKSPACE/$service" && npm audit --omit=dev --json > "$production_report") || true
+            node scripts/report-npm-audit.js "$production_report" "$service" production
           done
       - name: Validate Prisma schema
         run: npx prisma validate
@@ -151,7 +125,7 @@ jobs:
         run: |
           while IFS= read -r file; do
             node --check "$file"
-          done < <(find src test ../api-gateway/src ../shared ../user-service/src ../user-service/test -type f -name '*.js' -print)
+          done < <(find src test ../api-gateway/src ../shared ../user-service/src ../user-service/test ../scripts -type f -name '*.js' -print)
       - name: Run Event Service unit and integration tests
         run: npm test
       - name: Run User Service internal authentication tests
@@ -195,19 +169,3 @@ jobs:
       - name: Build Event Service image
         working-directory: .
         run: docker build -f event-service/Dockerfile -t ticketflow-event-service:ci .
-      - name: Commit tested dependency lockfiles
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/phase-2.1/')
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add event-service/package-lock.json api-gateway/package-lock.json user-service/package-lock.json
-          if git diff --cached --quiet; then
-            echo "Dependency lockfiles are already current."
-            exit 0
-          fi
-          git commit -m "chore(deps): refresh audited dependency lockfiles"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-
