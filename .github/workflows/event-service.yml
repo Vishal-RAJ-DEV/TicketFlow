@@ -8,6 +8,8 @@ on:
     paths:
       - 'event-service/**'
       - 'user-service/**'
+      - 'booking-service/**'
+      - 'payment-service/**'
       - 'load-tests/**'
       - 'monitoring/**'
       - 'docker-compose.production.yml'
@@ -107,11 +109,13 @@ jobs:
           npm ci
           npm ci --prefix ../api-gateway
           npm ci --prefix ../user-service
+          npm ci --prefix ../booking-service
+          npm ci --prefix ../payment-service
       - name: Audit committed dependency lockfiles
         working-directory: .
         run: |
           set -euo pipefail
-          for service in event-service api-gateway user-service; do
+          for service in event-service api-gateway user-service booking-service payment-service; do
             echo "===== Full dependency audit: $service ====="
             full_report="$RUNNER_TEMP/$service-full-audit.json"
             (cd "$GITHUB_WORKSPACE/$service" && npm audit --json > "$full_report") || true
@@ -132,7 +136,7 @@ jobs:
         run: |
           while IFS= read -r file; do
             node --check "$file"
-          done < <(find src test ../api-gateway/src ../api-gateway/test ../shared ../user-service/src ../user-service/test ../scripts -type f -name '*.js' -print)
+          done < <(find src test ../api-gateway/src ../api-gateway/test ../shared ../user-service/src ../user-service/test ../booking-service/src ../payment-service/src ../scripts -type f -name '*.js' -print)
       - name: Run Event Service unit and integration tests
         run: npm test
       - name: Run API Gateway CSRF tests
