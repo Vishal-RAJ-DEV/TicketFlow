@@ -38,6 +38,8 @@ on:
     paths:
       - 'event-service/**'
       - 'user-service/**'
+      - 'booking-service/**'
+      - 'payment-service/**'
       - 'load-tests/**'
       - 'monitoring/**'
       - 'docker-compose.production.yml'
