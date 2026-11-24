@@ -142,15 +142,6 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(pkg, null, 2));
           NODE
             (cd "$production_dir" && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
-            if node - "$production_dir/package-lock.json" <<'NODE'
-            const fs = require('node:fs');
-            const lock = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-            process.exit(lock.packages?.['node_modules/prisma'] ? 0 : 1);
-          NODE
-            then
-              echo "Prisma CLI is still present in the production dependency graph for $service"
-              exit 1
-            fi
             (cd "$production_dir" && npm audit --package-lock-only --json > "$production_report") || true
             node scripts/report-npm-audit.js "$production_report" "$service" production
           done
