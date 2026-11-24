@@ -22,6 +22,7 @@ const isCsrfExempt = (req) => {
 };
 
 const {
+  generateCsrfToken,
   doubleCsrfProtection,
 } = doubleCsrf({
   getSecret: () => config.CSRF_SECRET,
@@ -37,5 +38,6 @@ module.exports = {
   CSRF_COOKIE_NAME,
   CSRF_MIRROR_COOKIE_NAME,
   csrfCookieOptions,
+  generateCsrfToken,
   doubleCsrfProtection,
 };
