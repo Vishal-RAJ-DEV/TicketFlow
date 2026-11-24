@@ -28,28 +28,24 @@ router.post(
 router.post(
      '/users/auth/verify-otp',
      endpointRateLimit(10, 3600000), // 10 requests per hour
-     ...csrfProtection,
      userServiceProxy
 );
 
 router.post(
      '/users/auth/login',
      endpointRateLimit(100, 900000),// 100 requests per 15 minutes
-     ...csrfProtection,
      userServiceProxy
 );
 
 router.post(
      '/users/auth/google-auth',
      endpointRateLimit(10, 900000), // 10 requests per 15 minutes
-     ...csrfProtection,
      userServiceProxy
 );
 
 router.post(
      '/users/auth/refresh',
      endpointRateLimit(20, 900000), // 20 requests per 15 minutes
-     ...csrfProtection,
      userServiceProxy
 );
 
@@ -63,7 +59,6 @@ router.get(
 
 router.put(
      '/users/user/profile',
-     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
      userServiceProxy
@@ -71,7 +66,6 @@ router.put(
 
 router.delete(
      '/users/user/profile',
-     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
      userServiceProxy
@@ -183,7 +177,6 @@ const bookingServiceProxy = createProxy('bookingService', config.SERVICES.BOOKIN
 
 router.post(
      '/bookings/bookings',
-     ...csrfProtection,
      requireAuth,
      endpointRateLimit(5, 60000), // 5 booking attempts per minute,
      bookingServiceProxy
@@ -205,7 +198,6 @@ router.get(
 
 router.post(
      '/bookings/bookings/:bookingId/verify-payment',
-     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
      bookingServiceProxy
@@ -213,7 +205,6 @@ router.post(
 
 router.post(
      '/bookings/bookings/:bookingId/cancel',
-     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
      bookingServiceProxy
@@ -227,7 +218,6 @@ const paymentServiceProxy = createProxy('paymentService', config.SERVICES.PAYMEN
 // Razorpay webhook (public — no auth, signature-verified by payment-service)
 router.post(
      '/payments/webhooks/razorpay',
-     ...csrfProtection,
      paymentServiceProxy
 );
 
