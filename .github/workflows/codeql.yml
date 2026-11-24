@@ -35,6 +35,12 @@ jobs:
         with:
           languages: ${{ matrix.language }}
       - name: Perform CodeQL analysis
+        id: analyze
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+          output: ${{ runner.temp }}/codeql-results
+          post-processed-sarif-path: ${{ runner.temp }}/codeql-postprocessed
+      - name: Report CodeQL findings with exact source locations
+        if: always()
+        run: node scripts/report-codeql-sarif.js "${{ runner.temp }}/codeql-postprocessed" "${{ steps.analyze.outputs.sarif-output }}"
