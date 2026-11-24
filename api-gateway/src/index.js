@@ -11,6 +11,8 @@ const { reqLogger } = require('./middlewares/req.middleware');
 const { corsMiddleware } = require('./middlewares/cors.middleware');
 const routes = require('./routes');
 const { RedisClient } = require('./config/redis');
+const { endpointRateLimit } = require('./middlewares/rateLimiting.middleware');
+const { ensureCsrfSession, generateCsrfToken, doubleCsrfProtection } = require('./middlewares/csrf.middleware');
 
 const app = express();
 app.use(corsMiddleware);
@@ -27,6 +29,15 @@ app.use((req, res, next) => {
 app.use(express.urlencoded({ extended: true, limit: '10mb', parameterLimit: 100 }));
 app.use(cookieParser());
 if (config.NODE_ENV === 'development') app.use(morgan('dev'));
+
+// Browser clients bootstrap a signed CSRF token, then echo it in X-CSRF-Token
+// for every state-changing request that relies on cookies.
+app.use('/api', ensureCsrfSession);
+app.get('/api/csrf', endpointRateLimit(60, 60000), (req, res) => {
+  const csrfToken = generateCsrfToken(req, res);
+  res.status(200).json({ success: true, csrfToken });
+});
+app.use('/api', doubleCsrfProtection);
 
 app.get('/health', (req, res) => res.status(200).json({
   success: true,
