@@ -77,6 +77,7 @@ This is the proposed first contract set. Partition count, replication factor and
 | event.updated | Event Service | Search | eventId | Published event metadata changes |
 | event.cancelled | Event Service | Inventory, Order, Ticket, Search, Notification | eventId | Stop sales/coordinated cancellation |
 | event.occurrence-published | Event Service | Inventory, Search, Queue | occurrenceId | Materialize published occurrence configuration |
+| event.ticket-type-status-changed | Event Service | Inventory, Search | occurrenceId + ticketTypeId | Pause or resume new sales for a configured ticket type |
 | venue.layout-version-published | Event Service | Inventory | layoutVersionId | Publish immutable venue layout snapshot |
 | inventory.hold-created | Inventory | Order, Analytics | orderId | Hold committed |
 | inventory.hold-confirmed | Inventory | Order, Analytics | orderId | Hold became sale |
@@ -194,6 +195,20 @@ The Phase 2 Event Service emits this payload when an occurrence transitions from
 ~~~
 
 Inventory Service must store the source occurrence version and layout version. Duplicate event IDs are ignored. Older versions must not overwrite newer configuration. After sales start, layout changes require an explicit migration policy; the consumer must not silently delete sold/held seats.
+
+### event.ticket-type-status-changed
+
+This event is emitted when an organizer pauses or resumes an already-published ticket type while its occurrence is still `SCHEDULED` or `ON_SALE`. The Event Service updates the ticket-type status and inserts this event into its transactional outbox in the same database transaction.
+
+~~~json
+{
+  "previousStatus": "ACTIVE",
+  "occurrence": { "id": "occ_123", "eventId": "event_123", "status": "ON_SALE", "version": 2 },
+  "ticketType": { "id": "vip_123", "occurrenceId": "occ_123", "status": "PAUSED", "version": 3 }
+}
+~~~
+
+The envelope aggregate is `TICKET_TYPE`; its ID is the ticket type ID and its version is the ticket type version. Consumers use that version to ignore stale status changes. Inventory Service must stop admitting new holds for a paused type and may resume new holds when it receives a later `ACTIVE` version. This event does not cancel existing holds, confirmed orders or issued tickets. The Order/Inventory cancellation policy remains owned by those services.
 
 ### inventory.hold-created
 
