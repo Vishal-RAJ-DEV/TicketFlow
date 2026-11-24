@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { randomBytes } = require('node:crypto');
-const { randomBytes } = require('node:crypto');
 
 process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-access-secret-at-least-32-characters-long';
