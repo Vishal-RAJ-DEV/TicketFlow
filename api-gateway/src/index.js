@@ -34,7 +34,7 @@ if (config.NODE_ENV === 'development') app.use(morgan('dev'));
 // for every state-changing request that relies on cookies.
 app.use('/api', ensureCsrfSession);
 app.get('/api/csrf', endpointRateLimit(60, 60000), (req, res) => {
-  const csrfToken = generateCsrfToken(req, res);
+  const csrfToken = generateCsrfToken(req, res, { overwrite: Boolean(req.csrfSessionCreated) });
   res.status(200).json({ success: true, csrfToken });
 });
 app.use('/api', doubleCsrfProtection);
