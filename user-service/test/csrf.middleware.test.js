@@ -17,6 +17,7 @@ const {
   SESSION_COOKIE_NAME,
   CSRF_MIRROR_COOKIE_NAME,
   csrfCookieOptions,
+  generateCsrfToken,
   doubleCsrfProtection,
 } = require('../src/middlewares/csrf.middleware');
 
@@ -34,7 +35,9 @@ const createApp = () => {
   app.use(validateUserServiceCsrfCookie);
   app.use(doubleCsrfProtection);
   app.get('/csrf', (req, res) => {
-    res.status(200).json({ success: true });
+    const csrfToken = generateCsrfToken(req, res);
+    res.cookie(CSRF_MIRROR_COOKIE_NAME, csrfToken, csrfCookieOptions);
+    res.status(200).json({ csrfToken });
   });
   app.post('/write', (req, res) => res.status(200).json({ success: true }));
   app.post('/bearer-write', (req, res) => res.status(200).json({ success: true, client: 'bearer' }));
@@ -67,22 +70,30 @@ const getCookieHeader = (response) => {
   return setCookies.map((cookie) => cookie.split(';', 1)[0]).join('; ');
 };
 
-test('User Service requires the Gateway-issued CSRF cookie/header pair for unsafe browser requests', async () => {
+test('User Service accepts a valid session-bound token and rejects missing or mismatched tokens', async () => {
   await withServer(createApp(), async (baseUrl) => {
-    const sessionId = randomBytes(32).toString('base64url');
-    const sessionCookie = SESSION_COOKIE_NAME + '=' + sessionId;
-    const csrfCookie = CSRF_MIRROR_COOKIE_NAME + '=signed-token-from-gateway';
-    const cookie = sessionCookie + '; ' + csrfCookie;
+    const bootstrap = await fetch(baseUrl + '/csrf');
+    assert.equal(bootstrap.status, 200);
+    const { csrfToken } = await bootstrap.json();
+    const cookie = getCookieHeader(bootstrap);
+    assert.ok(cookie.includes(SESSION_COOKIE_NAME + '='));
+    assert.ok(cookie.includes(CSRF_MIRROR_COOKIE_NAME + '='));
+
+    const valid = await fetch(baseUrl + '/write', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'X-CSRF-Token': csrfToken },
+    });
+    assert.equal(valid.status, 200);
 
     const missing = await fetch(baseUrl + '/write', {
       method: 'POST',
-      headers: { Cookie: sessionCookie },
+      headers: { Cookie: cookie },
     });
     assert.equal(missing.status, 403);
 
     const mismatched = await fetch(baseUrl + '/write', {
       method: 'POST',
-      headers: { Cookie: cookie, 'X-CSRF-Token': 'different-token' },
+      headers: { Cookie: cookie, 'X-CSRF-Token': csrfToken + '-tampered' },
     });
     assert.equal(mismatched.status, 403);
   });
