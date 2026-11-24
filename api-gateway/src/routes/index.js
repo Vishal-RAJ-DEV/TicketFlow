@@ -5,7 +5,6 @@ const { createProxy, getCircuitBreakerStatus } = require('../services/proxy');
 const { ipRateLimit, endpointRateLimit, combinedRateLimit } = require('../middlewares/rateLimiting.middleware')
 const { config } = require('../config');
 const { validateCsrfDoubleSubmit, doubleCsrfProtection } = require('../middlewares/csrf.middleware');
-const csrfProtection = [validateCsrfDoubleSubmit, doubleCsrfProtection];
 
 // Express-local quota is defense in depth and is recognized by static analysis.
 // Redis-backed combinedRateLimit remains the cross-replica enforcement layer.
@@ -73,7 +72,8 @@ router.get(
 
 router.put(
      '/users/user/profile',
-     ...csrfProtection,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      combinedRateLimit(),
      authorizationRateLimit,
      requireAuth,
@@ -82,7 +82,8 @@ router.put(
 
 router.delete(
      '/users/user/profile',
-     ...csrfProtection,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      combinedRateLimit(),
      authorizationRateLimit,
      requireAuth,
@@ -198,7 +199,8 @@ const bookingServiceProxy = createProxy('bookingService', config.SERVICES.BOOKIN
 
 router.post(
      '/bookings/bookings',
-     ...csrfProtection,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      endpointRateLimit(5, 60000), // 5 booking attempts per minute
      authorizationRateLimit,
      requireAuth,
@@ -223,7 +225,8 @@ router.get(
 
 router.post(
      '/bookings/bookings/:bookingId/verify-payment',
-     ...csrfProtection,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      combinedRateLimit(),
      authorizationRateLimit,
      requireAuth,
@@ -232,7 +235,8 @@ router.post(
 
 router.post(
      '/bookings/bookings/:bookingId/cancel',
-     ...csrfProtection,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      combinedRateLimit(),
      authorizationRateLimit,
      requireAuth,
