@@ -16,6 +16,27 @@ const csrfCookieOptions = {
   maxAge: 24 * 60 * 60 * 1000,
 };
 
+function validateUserServiceCsrfCookie(req, res, next) {
+     const authorization = req.headers.authorization;
+     const isBearerRequest = typeof authorization === 'string' && /^Bearer\s+\S+$/i.test(authorization);
+     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || isBearerRequest) return next();
+
+     const csrfCookie =
+          (req.cookies && req.cookies['x-csrf-token']) ||
+          (req.cookies && req.cookies['__Host-psifi.x-csrf-token']);
+     const csrfHeader = req.headers['x-csrf-token'];
+     req.csrfHeaderMatchesCookie = csrfCookie === csrfHeader;
+
+     if (typeof csrfCookie !== 'string' || typeof csrfHeader !== 'string' || !req.csrfHeaderMatchesCookie) {
+          const error = new Error('Invalid CSRF token');
+          error.statusCode = 403;
+          error.code = 'EBADCSRFTOKEN';
+          return next(error);
+     }
+     return next();
+}
+
+
 const isCsrfExempt = (req) => {
   const authorization = req.headers.authorization;
   return typeof authorization === 'string' && /^Bearer\s+\S+$/i.test(authorization);
@@ -38,6 +59,7 @@ module.exports = {
   CSRF_COOKIE_NAME,
   CSRF_MIRROR_COOKIE_NAME,
   csrfCookieOptions,
+  validateUserServiceCsrfCookie,
   generateCsrfToken,
   doubleCsrfProtection,
 };
