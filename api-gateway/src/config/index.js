@@ -11,6 +11,7 @@ const config = {
      JWT_ACCESS_SECRET: readSecret('JWT_ACCESS_SECRET'),
      JWT_REFRESH_SECRET: readSecret('JWT_REFRESH_SECRET'),
      GATEWAY_ASSERTION_SECRET: readSecret('GATEWAY_ASSERTION_SECRET'),
+     CSRF_SECRET: readSecret('CSRF_SECRET'),
      GATEWAY_ASSERTION_SECRET_PREVIOUS: readSecret('GATEWAY_ASSERTION_SECRET_PREVIOUS'),
      EVENT_SERVICE_TLS_CA_FILE: process.env.EVENT_SERVICE_TLS_CA_FILE || '',
      EVENT_SERVICE_TLS_CLIENT_CERT_FILE: process.env.EVENT_SERVICE_TLS_CLIENT_CERT_FILE || '',
@@ -39,7 +40,7 @@ const config = {
      CIRCUIT_BREAKER_TIMEOUT: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000', 10),
 };
 
-const requiredConfig = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'GATEWAY_ASSERTION_SECRET'];
+const requiredConfig = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'GATEWAY_ASSERTION_SECRET', 'CSRF_SECRET'];
 
 requiredConfig.forEach((key) => {
      if (!config[key]) {
@@ -49,6 +50,9 @@ requiredConfig.forEach((key) => {
 
 if (config.GATEWAY_ASSERTION_SECRET.length < 32) {
      throw new Error('GATEWAY_ASSERTION_SECRET must contain at least 32 characters');
+}
+if (config.CSRF_SECRET.length < 32) {
+     throw new Error('CSRF_SECRET must contain at least 32 characters');
 }
 
 if (config.NODE_ENV === 'production') {
