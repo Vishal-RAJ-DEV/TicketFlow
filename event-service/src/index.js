@@ -5,7 +5,6 @@ const https = require('node:https');
 const http = require('node:http');
 const helmet = require('helmet');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
-const cookieParser = require('cookie-parser');
 const logger = require('./config/logger');
 const { config } = require('./config');
 const asyncHandler = require('./utils/asyncHandler');
@@ -81,7 +80,6 @@ app.use(reqLogger);
 app.use(requireMtlsClient);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb', parameterLimit: 100 }));
-app.use(cookieParser());
 app.use((req, res, next) => {
   req.body = req.body === undefined ? {} : req.body;
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) || Buffer.isBuffer(req.body)) {
