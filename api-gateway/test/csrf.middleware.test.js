@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { randomBytes } = require('node:crypto');
+const { randomBytes } = require('node:crypto');
 
 process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-access-secret-at-least-32-characters-long';
@@ -14,7 +15,11 @@ process.env.CSRF_SECRET = 'test-csrf-hmac-secret-at-least-32-characters-long';
 
 const {
   SESSION_COOKIE_NAME,
+  CSRF_COOKIE_NAME,
+  CSRF_MIRROR_COOKIE_NAME,
   ensureCsrfSession,
+  setCsrfTokenCookie,
+  validateCsrfDoubleSubmit,
   generateCsrfToken,
   doubleCsrfProtection,
 } = require('../src/middlewares/csrf.middleware');
@@ -25,8 +30,10 @@ const createTestApp = () => {
   app.use('/api', ensureCsrfSession);
   app.get('/api/csrf', (req, res) => {
     const csrfToken = generateCsrfToken(req, res, { overwrite: Boolean(req.csrfSessionCreated) });
+    setCsrfTokenCookie(res, csrfToken);
     res.status(200).json({ csrfToken });
   });
+  app.use('/api', validateCsrfDoubleSubmit);
   app.use('/api', doubleCsrfProtection);
   app.post('/api/write', (req, res) => res.status(200).json({ success: true }));
   app.post('/api/payments/webhooks/razorpay', (req, res) => res.status(200).json({ webhook: true }));
@@ -62,6 +69,8 @@ test('CSRF bootstrap issues a token and cookie that authorize same-session write
     const cookie = getCookieHeader(bootstrap);
     assert.ok(csrfToken);
     assert.ok(cookie.includes(SESSION_COOKIE_NAME + '='));
+    assert.ok(cookie.includes(CSRF_COOKIE_NAME + '='));
+    assert.ok(cookie.includes(CSRF_MIRROR_COOKIE_NAME + '='));
 
     const write = await fetch(baseUrl + '/api/write', {
       method: 'POST',
@@ -104,6 +113,24 @@ test('CSRF token cannot be replayed with another session cookie', async () => {
     const response = await fetch(baseUrl + '/api/write', {
       method: 'POST',
       headers: { Cookie: otherSession, 'X-CSRF-Token': csrfToken },
+    });
+    assert.equal(response.status, 403);
+  });
+});
+
+test('the signed CSRF cookie is still validated after the mirror/header check', async () => {
+  await withServer(createTestApp(), async (baseUrl) => {
+    const bootstrap = await fetch(baseUrl + '/api/csrf');
+    const cookie = getCookieHeader(bootstrap);
+    const { csrfToken } = await bootstrap.json();
+    const tamperedSignedCookie = cookie.replace(
+      new RegExp(CSRF_COOKIE_NAME + '=[^;]+'),
+      CSRF_COOKIE_NAME + '=invalid-signed-value'
+    );
+
+    const response = await fetch(baseUrl + '/api/write', {
+      method: 'POST',
+      headers: { Cookie: tamperedSignedCookie, 'X-CSRF-Token': csrfToken },
     });
     assert.equal(response.status, 403);
   });
