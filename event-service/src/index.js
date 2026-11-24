@@ -90,14 +90,13 @@ app.use((req, res, next) => {
 // Apply a coarse request cap before HMAC verification so malformed traffic cannot
 // turn the nonce table into an unbounded write path. Apply per-user limits after
 // verified identity is populated by gatewayAssertion.
-app.use('/catalog', requestRateLimit, gatewayAssertion);
 app.use('/organizers', requestRateLimit, gatewayAssertion, authenticatedApiRateLimit, organizerRoutes);
 app.use('/venues', requestRateLimit, gatewayAssertion, authenticatedApiRateLimit, venueRoutes);
 app.use('/events', requestRateLimit, gatewayAssertion, authenticatedApiRateLimit, eventRoutes);
 app.use('/occurrences', requestRateLimit, gatewayAssertion, authenticatedApiRateLimit, occurrenceRoutes);
 app.use('/ticket-types', requestRateLimit, gatewayAssertion, authenticatedApiRateLimit, ticketTypeRoutes);
-app.get('/catalog', eventController.listPublicEvents);
-app.get('/catalog/:slug', eventController.getPublicEvent);
+app.get('/catalog', requestRateLimit, gatewayAssertion, authenticatedApiRateLimit, eventController.listPublicEvents);
+app.get('/catalog/:slug', requestRateLimit, gatewayAssertion, authenticatedApiRateLimit, eventController.getPublicEvent);
 // Operational endpoints are private, mTLS-gated and rate-limited before token checks.
 app.use('/internal', operationsRateLimit, opsRoutes);
 app.use(notFound);
