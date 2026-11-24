@@ -51,6 +51,7 @@ Implemented in Phase 2:
 - Immutable published venue-layout snapshots.
 - Event and occurrence create/update/publish/cancel workflows.
 - Ticket types, integer-minor-unit pricing and sales windows.
+- Published ticket-type pause/resume with versioned transactional Outbox events.
 - Transactional Outbox events for event, occurrence and layout publication.
 - API Gateway proxy routes, PostgreSQL migration and CI workflow.
 
@@ -151,7 +152,7 @@ Update the relevant documentation in the same pull request as any contract chang
 
 ## Phase 2.1 — Security and reliability hardening
 
-The hardening PR adds signed, replay-protected Gateway assertions; API-level tests through the real Gateway and Event Service; User Service active-account validation for organizer invitations; occurrence cancellation and scheduled lifecycle transitions; transactional outbox retry/dead-letter operations; Prometheus metrics/alerts; and a production Compose overlay for private networks, Gateway-to-Event-Service mTLS, User Service HTTPS/internal-key rotation, and Kafka TLS/SASL.
+The hardening PR adds signed, replay-protected Gateway assertions; API-level tests through the real Gateway and Event Service; User Service active-account validation for organizer invitations; occurrence cancellation and scheduled lifecycle transitions; published ticket-type pause/resume events; transactional outbox retry/dead-letter operations; Prometheus metrics/alerts; and a production Compose overlay for private networks, Gateway-to-Event-Service mTLS, User Service HTTPS/internal-key rotation, and Kafka TLS/SASL.
 
 All three service dependency lockfiles are refreshed on semver-compatible versions and audited in CI. The Event Service and User Service test suites run against PostgreSQL/Redis-backed CI dependencies. Manual k6 scenarios are under `load-tests/`; they should run against a disposable staging environment. The GA contention scenario exercises Event Service ticket-type capacity configuration only. It does not claim to test live Inventory Service holds or purchase throughput; Inventory Service is still a later implementation phase.
 
