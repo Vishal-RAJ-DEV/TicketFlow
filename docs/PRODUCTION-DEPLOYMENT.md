@@ -32,7 +32,7 @@ Create the files referenced by the production Compose variables. Each file shoul
 
 - Event Service database URL and Gateway assertion HMAC key.
 - User Service internal service key.
-- Gateway JWT access and refresh signing secrets, plus a separate CSRF HMAC secret.
+- Gateway JWT access and refresh signing secrets, plus one CSRF HMAC secret shared only by API Gateway and User Service.
 - Gateway client certificate/key and Event Service server certificate/key.
 - Separate CA certificates for the Gateway client identity, Event Service server identity, and Kafka.
 - Kafka SASL password, Event Service ops token, metrics token, and Redis URL.
@@ -51,7 +51,7 @@ Generate secrets from a cryptographically secure source, e.g. `openssl rand -hex
 
 Gateway assertions are timestamp-bound and single-use via the database nonce table. Replayed nonces are rejected across all Event Service replicas.
 
-Browser clients must first call `GET /api/csrf` with credentials enabled, retain the returned `csrfToken`, and send it in the `X-CSRF-Token` header on every state-changing request. The Gateway stores the signed token in an HttpOnly, SameSite=Strict cookie bound to a separate HttpOnly CSRF-session cookie. Bearer-token clients do not need a CSRF token because browsers do not attach Authorization headers cross-site. The Razorpay webhook is exempt from CSRF middleware only because Payment Service verifies its provider signature; do not add other exemptions without equivalent independent request authentication.
+Browser clients must first call `GET /api/csrf` with credentials enabled, retain the returned `csrfToken`, and send it in the `X-CSRF-Token` header on every state-changing request. The API Gateway stores the signed token in an HttpOnly, SameSite=Strict cookie bound to a separate HttpOnly CSRF-session cookie; it validates the cookie/header pair and HMAC before routing. User Service validates the same forwarded cookie/header pair and HMAC again, so its `otp_session` and refresh-token cookie handlers are protected even behind the Gateway. Provision the exact same `CSRF_SECRET` value in API Gateway and User Service. Bearer-token clients do not need a CSRF token because browsers do not attach Authorization headers cross-site. The Razorpay webhook is exempt from CSRF middleware only because Payment Service verifies its provider signature; do not add other exemptions without equivalent independent request authentication.
 
 ## Outbox operations
 
