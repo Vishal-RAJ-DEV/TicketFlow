@@ -3,6 +3,8 @@ const { requireAuth } = require('../middlewares/auth.middleware');
 const { createProxy, getCircuitBreakerStatus } = require('../services/proxy');
 const { ipRateLimit, endpointRateLimit, combinedRateLimit } = require('../middlewares/rateLimiting.middleware')
 const { config } = require('../config');
+const { validateCsrfDoubleSubmit, doubleCsrfProtection } = require('../middlewares/csrf.middleware');
+const csrfProtection = [validateCsrfDoubleSubmit, doubleCsrfProtection];
 
 const router = express.Router();
 
@@ -59,6 +61,7 @@ router.get(
 
 router.put(
      '/users/user/profile',
+     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
      userServiceProxy
@@ -66,6 +69,7 @@ router.put(
 
 router.delete(
      '/users/user/profile',
+     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
      userServiceProxy
@@ -74,9 +78,11 @@ router.delete(
 const eventServiceProxy = createProxy('eventService', config.SERVICES.EVENT_SERVICE_URL, { gatewayAssertion: true });
 
 const eventRoute = (method, path, authenticated = true, limiter = combinedRateLimit()) => {
+     const isStateChanging = ['post', 'put', 'patch', 'delete'].includes(method);
+     const csrfHandlers = isStateChanging ? csrfProtection : [];
      const handlers = authenticated
-          ? [requireAuth, limiter, eventServiceProxy]
-          : [limiter, eventServiceProxy];
+          ? [...csrfHandlers, requireAuth, limiter, eventServiceProxy]
+          : [limiter, ...csrfHandlers, eventServiceProxy];
      router[method](path, ...handlers);
 };
 
