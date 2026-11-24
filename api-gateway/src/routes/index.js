@@ -54,24 +54,24 @@ router.post(
 // private routes
 router.get(
      '/users/user/profile',
-     requireAuth,
      combinedRateLimit(),
+     requireAuth,
      userServiceProxy
 )
 
 router.put(
      '/users/user/profile',
      ...csrfProtection,
-     requireAuth,
      combinedRateLimit(),
+     requireAuth,
      userServiceProxy
 )
 
 router.delete(
      '/users/user/profile',
      ...csrfProtection,
-     requireAuth,
      combinedRateLimit(),
+     requireAuth,
      userServiceProxy
 )
 
@@ -81,7 +81,7 @@ const eventRoute = (method, path, authenticated = true, limiter = combinedRateLi
      const isStateChanging = ['post', 'put', 'patch', 'delete'].includes(method);
      const csrfHandlers = isStateChanging ? csrfProtection : [];
      const handlers = authenticated
-          ? [...csrfHandlers, requireAuth, limiter, eventServiceProxy]
+          ? [...csrfHandlers, limiter, requireAuth, eventServiceProxy]
           : [limiter, ...csrfHandlers, eventServiceProxy];
      router[method](path, ...handlers);
 };
@@ -168,8 +168,8 @@ router.get(
 // Authenticated: individual seat statuses
 router.get(
      '/inventory/schedules/:scheduleId/seats',
-     requireAuth,
      combinedRateLimit(),
+     requireAuth,
      inventoryServiceProxy
 );
 
@@ -183,36 +183,39 @@ const bookingServiceProxy = createProxy('bookingService', config.SERVICES.BOOKIN
 
 router.post(
      '/bookings/bookings',
+     ...csrfProtection,
+     endpointRateLimit(5, 60000), // 5 booking attempts per minute
      requireAuth,
-     endpointRateLimit(5, 60000), // 5 booking attempts per minute,
      bookingServiceProxy
 );
 
 router.get(
      '/bookings/bookings',
-     requireAuth,
      combinedRateLimit(),
+     requireAuth,
      bookingServiceProxy
 );
 
 router.get(
      '/bookings/bookings/:bookingId',
-     requireAuth,
      combinedRateLimit(),
+     requireAuth,
      bookingServiceProxy
 );
 
 router.post(
      '/bookings/bookings/:bookingId/verify-payment',
-     requireAuth,
+     ...csrfProtection,
      combinedRateLimit(),
+     requireAuth,
      bookingServiceProxy
 );
 
 router.post(
      '/bookings/bookings/:bookingId/cancel',
-     requireAuth,
+     ...csrfProtection,
      combinedRateLimit(),
+     requireAuth,
      bookingServiceProxy
 );
 
@@ -224,6 +227,7 @@ const paymentServiceProxy = createProxy('paymentService', config.SERVICES.PAYMEN
 // Razorpay webhook (public — no auth, signature-verified by payment-service)
 router.post(
      '/payments/webhooks/razorpay',
+     endpointRateLimit(600, 60000),
      paymentServiceProxy
 );
 
