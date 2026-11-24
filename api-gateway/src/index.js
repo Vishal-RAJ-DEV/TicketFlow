@@ -12,7 +12,7 @@ const { corsMiddleware } = require('./middlewares/cors.middleware');
 const routes = require('./routes');
 const { RedisClient } = require('./config/redis');
 const { endpointRateLimit } = require('./middlewares/rateLimiting.middleware');
-const { ensureCsrfSession, generateCsrfToken, doubleCsrfProtection } = require('./middlewares/csrf.middleware');
+const { ensureCsrfSession, generateCsrfToken, setCsrfTokenCookie, validateCsrfDoubleSubmit, doubleCsrfProtection } = require('./middlewares/csrf.middleware');
 
 const app = express();
 app.use(corsMiddleware);
@@ -35,8 +35,10 @@ if (config.NODE_ENV === 'development') app.use(morgan('dev'));
 app.use('/api', ensureCsrfSession);
 app.get('/api/csrf', endpointRateLimit(60, 60000), (req, res) => {
   const csrfToken = generateCsrfToken(req, res, { overwrite: Boolean(req.csrfSessionCreated) });
+  setCsrfTokenCookie(res, csrfToken);
   res.status(200).json({ success: true, csrfToken });
 });
+app.use('/api', validateCsrfDoubleSubmit);
 app.use('/api', doubleCsrfProtection);
 
 app.get('/health', (req, res) => res.status(200).json({
