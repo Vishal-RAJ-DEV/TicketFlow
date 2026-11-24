@@ -104,7 +104,7 @@ services:
       - event_service_metrics_token
     networks: [ticketflow-backend]
     healthcheck:
-      test: ["CMD", "node", "-e", "require('https').get({hostname:'127.0.0.1',port:4003,path:'/ready',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4103/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 20s
       timeout: 5s
       retries: 5
