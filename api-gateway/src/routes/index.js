@@ -66,17 +66,17 @@ router.get(
 
 router.put(
      '/users/user/profile',
+     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
-     ...csrfProtection,
      userServiceProxy
 )
 
 router.delete(
      '/users/user/profile',
+     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
-     ...csrfProtection,
      userServiceProxy
 )
 
@@ -86,7 +86,7 @@ const eventRoute = (method, path, authenticated = true, limiter = combinedRateLi
      const isStateChanging = ['post', 'put', 'patch', 'delete'].includes(method);
      const csrfHandlers = isStateChanging ? csrfProtection : [];
      const handlers = authenticated
-          ? [requireAuth, limiter, ...csrfHandlers, eventServiceProxy]
+          ? [...csrfHandlers, requireAuth, limiter, eventServiceProxy]
           : [limiter, ...csrfHandlers, eventServiceProxy];
      router[method](path, ...handlers);
 };
@@ -188,9 +188,9 @@ const bookingServiceProxy = createProxy('bookingService', config.SERVICES.BOOKIN
 
 router.post(
      '/bookings/bookings',
-     requireAuth,
-     endpointRateLimit(5, 60000), // 5 booking attempts per minute
      ...csrfProtection,
+     requireAuth,
+     endpointRateLimit(5, 60000), // 5 booking attempts per minute,
      bookingServiceProxy
 );
 
@@ -210,17 +210,17 @@ router.get(
 
 router.post(
      '/bookings/bookings/:bookingId/verify-payment',
+     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
-     ...csrfProtection,
      bookingServiceProxy
 );
 
 router.post(
      '/bookings/bookings/:bookingId/cancel',
+     ...csrfProtection,
      requireAuth,
      combinedRateLimit(),
-     ...csrfProtection,
      bookingServiceProxy
 );
 
