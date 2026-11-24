@@ -158,6 +158,7 @@ jobs:
           JWT_ACCESS_SECRET_FILE: /tmp/jwt-access
           JWT_REFRESH_SECRET_FILE: /tmp/jwt-refresh
           GATEWAY_ASSERTION_SECRET_FILE: /tmp/gateway-secret
+          CSRF_SECRET_FILE: /tmp/csrf-secret
           GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE: /tmp/gateway-secret-previous
           EVENT_DATABASE_URL_SECRET_FILE: /tmp/database-url
           EVENT_SERVICE_CERT_FILE: /tmp/event-cert
