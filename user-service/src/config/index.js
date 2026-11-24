@@ -31,6 +31,7 @@ const config = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
 
+  CSRF_SECRET: readSecret('CSRF_SECRET', process.env.NODE_ENV === 'production' ? '' : 'dev-only-change-this-csrf-secret-before-deployment'),
   INTERNAL_SERVICE_KEY: readSecret('INTERNAL_SERVICE_KEY'),
   INTERNAL_SERVICE_KEY_PREVIOUS: readSecret('INTERNAL_SERVICE_KEY_PREVIOUS'),
 }
@@ -38,6 +39,9 @@ const config = {
 
 if (config.NODE_ENV === 'production' && (!config.JWT_ACCESS_SECRET || config.JWT_ACCESS_SECRET.length < 32 || !config.JWT_REFRESH_SECRET || config.JWT_REFRESH_SECRET.length < 32 || !config.OTP_HMAC_SECRET || config.OTP_HMAC_SECRET.length < 32)) {
   throw new Error('JWT and OTP secrets must contain at least 32 characters in production');
+}
+if (config.NODE_ENV === 'production' && (!config.CSRF_SECRET || config.CSRF_SECRET.length < 32)) {
+  throw new Error('CSRF_SECRET must contain at least 32 characters in production');
 }
 if (config.NODE_ENV === 'production' && (!config.INTERNAL_SERVICE_KEY || config.INTERNAL_SERVICE_KEY.length < 32)) {
   throw new Error('INTERNAL_SERVICE_KEY must contain at least 32 characters in production');
