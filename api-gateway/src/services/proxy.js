@@ -173,6 +173,10 @@ function createProxy(serviceName, serviceUrl, options = {}) {
                const servicePath = '/' + pathParts.slice(1).join('/');
                const downstreamPath = servicePath + (req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '');
                const headers = { ...req.headers };
+               if (serviceName === 'userService') {
+                    const clientIp = req.ip || req.socket?.remoteAddress;
+                    if (clientIp) headers['x-forwarded-for'] = clientIp;
+               }
 
                if (options.gatewayAssertion) {
                     // Never forward a caller-supplied identity or assertion.
