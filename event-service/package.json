@@ -29,7 +29,8 @@
     "helmet": "^8.1.0",
     "kafkajs": "^2.2.4",
     "pg": "^8.19.0",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "express-rate-limit": "^8.7.5"
   },
   "devDependencies": {
     "prisma": "^7.10.1"
