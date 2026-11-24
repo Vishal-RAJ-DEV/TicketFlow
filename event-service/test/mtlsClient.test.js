@@ -49,10 +49,10 @@ test('mTLS rejects missing, untrusted and unauthorized client certificates', () 
   }
 });
 
-test('mTLS leaves liveness and readiness probes reachable', () => {
+test('mTLS cannot be bypassed by requesting a health path on the protected listener', () => {
   for (const path of ['/', '/health', '/ready']) {
     const result = invoke({ path, authorized: false });
-    assert.equal(result.continued, true);
-    assert.equal(result.nextError, undefined);
+    assert.equal(result.continued, false);
+    assert.equal(result.nextError.statusCode, 401);
   }
 });
