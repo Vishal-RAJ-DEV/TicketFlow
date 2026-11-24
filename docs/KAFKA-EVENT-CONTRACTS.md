@@ -1,7 +1,7 @@
 # TICKETFLOW — Kafka Event Contracts
 
 **Status:** Phase 2 — Event Service catalog topics and envelope implemented; downstream topics remain proposed  
-**Last updated:** 2026-11-22
+**Last updated:** 2026-11-24
 
 ## 1. Contract rules
 
