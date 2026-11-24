@@ -4,6 +4,14 @@ const {config} = require('../config');
 const logger = require('../config/logger');
 
 module.exports = (err, req, res, next) => {
+     if (err?.code === 'EBADCSRFTOKEN') {
+          return res.status(403).json({
+               success: false,
+               error: 'CSRF_INVALID',
+               message: 'A valid CSRF token is required for this request',
+          });
+     }
+
      if (err instanceof AppError) {
           return res.status(err.statusCode).json({
                success: false,
