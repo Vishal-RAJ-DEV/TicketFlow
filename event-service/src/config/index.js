@@ -2,6 +2,12 @@ const { readSecret } = require('../../../shared/utils/readSecret');
 
 const config = {
   PORT: Number(process.env.PORT) || 4003,
+  HEALTH_PORT: Number(process.env.HEALTH_PORT) || 4103,
+  RATE_LIMIT_WINDOW_MS: Number(process.env.EVENT_SERVICE_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  RATE_LIMIT_MAX_REQUESTS: Number(process.env.EVENT_SERVICE_RATE_LIMIT_MAX_REQUESTS) || 1000,
+  EDGE_RATE_LIMIT_WINDOW_MS: Number(process.env.EVENT_SERVICE_EDGE_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
+  EDGE_RATE_LIMIT_MAX_REQUESTS: Number(process.env.EVENT_SERVICE_EDGE_RATE_LIMIT_MAX_REQUESTS) || 20000,
+  OPS_RATE_LIMIT_MAX_REQUESTS: Number(process.env.EVENT_SERVICE_OPS_RATE_LIMIT_MAX_REQUESTS) || 300,
   SERVICE_NAME: 'event-service',
   NODE_ENV: process.env.NODE_ENV || 'development',
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
