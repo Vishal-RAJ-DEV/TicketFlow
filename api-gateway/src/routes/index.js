@@ -1,8 +1,20 @@
 const express = require('express');
 const { requireAuth } = require('../middlewares/auth.middleware');
+const { rateLimit } = require('express-rate-limit');
 const { createProxy, getCircuitBreakerStatus } = require('../services/proxy');
 const { ipRateLimit, endpointRateLimit, combinedRateLimit } = require('../middlewares/rateLimiting.middleware')
 const { config } = require('../config');
+const { validateCsrfDoubleSubmit, doubleCsrfProtection } = require('../middlewares/csrf.middleware');
+
+// Express-local quota is defense in depth and is recognized by static analysis.
+// Redis-backed combinedRateLimit remains the cross-replica enforcement layer.
+const authorizationRateLimit = rateLimit({
+     windowMs: 15 * 60 * 1000,
+     limit: 300,
+     standardHeaders: 'draft-8',
+     legacyHeaders: false,
+     message: { success: false, code: 'TOO_MANY_REQUESTS', message: 'Too many requests' },
+});
 
 const router = express.Router();
 
@@ -52,32 +64,55 @@ router.post(
 // private routes
 router.get(
      '/users/user/profile',
-     requireAuth,
      combinedRateLimit(),
+     authorizationRateLimit,
+     requireAuth,
      userServiceProxy
 )
 
 router.put(
      '/users/user/profile',
-     requireAuth,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      combinedRateLimit(),
+     authorizationRateLimit,
+     requireAuth,
      userServiceProxy
 )
 
 router.delete(
      '/users/user/profile',
-     requireAuth,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      combinedRateLimit(),
+     authorizationRateLimit,
+     requireAuth,
      userServiceProxy
 )
 
-const eventServiceProxy = createProxy('eventService', config.SERVICES.EVENT_SERVICE_URL);
+const eventServiceProxy = createProxy('eventService', config.SERVICES.EVENT_SERVICE_URL, { gatewayAssertion: true });
 
 const eventRoute = (method, path, authenticated = true, limiter = combinedRateLimit()) => {
-     const handlers = authenticated
-          ? [requireAuth, limiter, eventServiceProxy]
-          : [limiter, eventServiceProxy];
-     router[method](path, ...handlers);
+     if (authenticated) {
+          if (method === 'post') {
+               router.post(path, validateCsrfDoubleSubmit, doubleCsrfProtection, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          } else if (method === 'put') {
+               router.put(path, validateCsrfDoubleSubmit, doubleCsrfProtection, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          } else if (method === 'patch') {
+               router.patch(path, validateCsrfDoubleSubmit, doubleCsrfProtection, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          } else if (method === 'delete') {
+               router.delete(path, validateCsrfDoubleSubmit, doubleCsrfProtection, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          } else {
+               router.get(path, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          }
+          return;
+     }
+
+     if (method === 'post') router.post(path, limiter, validateCsrfDoubleSubmit, doubleCsrfProtection, eventServiceProxy);
+     else if (method === 'put') router.put(path, limiter, validateCsrfDoubleSubmit, doubleCsrfProtection, eventServiceProxy);
+     else if (method === 'patch') router.patch(path, limiter, validateCsrfDoubleSubmit, doubleCsrfProtection, eventServiceProxy);
+     else if (method === 'delete') router.delete(path, limiter, validateCsrfDoubleSubmit, doubleCsrfProtection, eventServiceProxy);
+     else router.get(path, limiter, eventServiceProxy);
 };
 
 // Public event discovery
@@ -123,6 +158,7 @@ eventRoute('get', '/events/occurrences/events/:eventId');
 eventRoute('get', '/events/occurrences/:occurrenceId');
 eventRoute('patch', '/events/occurrences/:occurrenceId');
 eventRoute('post', '/events/occurrences/:occurrenceId/publish');
+eventRoute('post', '/events/occurrences/:occurrenceId/cancel');
 
 eventRoute('post', '/events/ticket-types/occurrences/:occurrenceId');
 eventRoute('get', '/events/ticket-types/occurrences/:occurrenceId');
@@ -161,8 +197,9 @@ router.get(
 // Authenticated: individual seat statuses
 router.get(
      '/inventory/schedules/:scheduleId/seats',
-     requireAuth,
      combinedRateLimit(),
+     authorizationRateLimit,
+     requireAuth,
      inventoryServiceProxy
 );
 
@@ -176,36 +213,47 @@ const bookingServiceProxy = createProxy('bookingService', config.SERVICES.BOOKIN
 
 router.post(
      '/bookings/bookings',
-     requireAuth,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      endpointRateLimit(5, 60000), // 5 booking attempts per minute
+     authorizationRateLimit,
+     requireAuth,
      bookingServiceProxy
 );
 
 router.get(
      '/bookings/bookings',
-     requireAuth,
      combinedRateLimit(),
+     authorizationRateLimit,
+     requireAuth,
      bookingServiceProxy
 );
 
 router.get(
      '/bookings/bookings/:bookingId',
-     requireAuth,
      combinedRateLimit(),
+     authorizationRateLimit,
+     requireAuth,
      bookingServiceProxy
 );
 
 router.post(
      '/bookings/bookings/:bookingId/verify-payment',
-     requireAuth,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      combinedRateLimit(),
+     authorizationRateLimit,
+     requireAuth,
      bookingServiceProxy
 );
 
 router.post(
      '/bookings/bookings/:bookingId/cancel',
-     requireAuth,
+     validateCsrfDoubleSubmit,
+     doubleCsrfProtection,
      combinedRateLimit(),
+     authorizationRateLimit,
+     requireAuth,
      bookingServiceProxy
 );
 
@@ -217,6 +265,7 @@ const paymentServiceProxy = createProxy('paymentService', config.SERVICES.PAYMEN
 // Razorpay webhook (public — no auth, signature-verified by payment-service)
 router.post(
      '/payments/webhooks/razorpay',
+     endpointRateLimit(600, 60000),
      paymentServiceProxy
 );
 

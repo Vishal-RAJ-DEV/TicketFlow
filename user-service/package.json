@@ -5,20 +5,20 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@prisma/adapter-pg": "^7.2.0",
-    "@prisma/client": "^7.2.0",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "@sendgrid/mail": "^8.1.6",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "google-auth-library": "^10.5.0",
@@ -28,10 +28,15 @@
     "kafkajs": "^2.2.4",
     "otp-generator": "^4.0.1",
     "pg": "^8.17.1",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "csrf-csrf": "^4.1.0",
+    "express-rate-limit": "^8.7.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11",
-    "prisma": "^7.2.0"
+    "prisma": "^7.10.1"
+  },
+  "overrides": {
+    "effect": "^3.22.5",
+    "ip-address": "^10.7.6"
   }
 }

@@ -3,7 +3,6 @@ const express = require('express');
 const helmet = require('helmet');
 const logger = require('./config/logger');
 const { config } = require('./config');
-const cookieParser = require('cookie-parser');
 
 const { corsMiddleware } = require('./middlewares/cors.middleware');
 const errorHandler = require('./middlewares/error.middleware');
@@ -26,7 +25,6 @@ app.use(helmet({
 app.use(reqLogger);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 app.get("/", (req, res) => {
      res.send("Hello from booking-service");

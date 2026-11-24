@@ -12,8 +12,10 @@ const { corsMiddleware } = require('./middlewares/cors.middleware');
 const errorHandler = require('./middlewares/error.middleware');
 const { reqLogger } = require('./middlewares/req.middleware');
 const { disconnectProducer } = require('./config/kafka');
+const { validateUserServiceCsrfCookie, doubleCsrfProtection } = require('./middlewares/csrf.middleware');
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(corsMiddleware);
 app.use(helmet({
@@ -23,6 +25,8 @@ app.use(helmet({
 app.use(reqLogger);
 app.use(express.json());
 app.use(cookieParser());
+app.use(validateUserServiceCsrfCookie);
+app.use(doubleCsrfProtection);
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 
@@ -63,4 +67,5 @@ const startServer = async () => {
           process.exit(1);
      }
 }
-startServer();
+if (require.main === module) startServer();
+module.exports = { app, startServer, validateUserServiceCsrfCookie };

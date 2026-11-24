@@ -117,7 +117,29 @@ const updateVenue = async (venueId, userId, data) => {
     update.status = data.status;
   }
   if (!Object.keys(update).length) throw new BadRequestError('No valid venue fields were supplied');
-  return prisma.venue.update({ where: { id: venueId }, data: update });
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM venues WHERE id = ${venueId} FOR UPDATE`;
+    const current = await tx.venue.findUnique({ where: { id: venueId } });
+    if (!current) throw new NotFoundError('Venue not found');
+
+    const catalogFields = ['name', 'address', 'city', 'state', 'country', 'postalCode', 'timezone', 'status'];
+    const changesCatalogData = catalogFields.some((field) =>
+      update[field] !== undefined && update[field] !== current[field]
+    );
+    if (changesCatalogData) {
+      const liveOccurrences = await tx.eventOccurrence.count({
+        where: { venueId, status: { in: ['SCHEDULED', 'ON_SALE', 'SALES_CLOSED'] } },
+      });
+      if (liveOccurrences > 0) {
+        throw new ConflictError(
+          'Venue identity and location fields are frozen while it has published future occurrences; cancel those occurrences or wait until they complete'
+        );
+      }
+    }
+
+    return tx.venue.update({ where: { id: venueId }, data: update });
+  });
 };
 
 const createLayoutVersion = async (venueId, userId) => {
@@ -153,12 +175,19 @@ const createSection = async (venueId, userId, data) => {
   if (!['ASSIGNED', 'GENERAL_ADMISSION'].includes(mode)) {
     throw new BadRequestError('mode must be ASSIGNED or GENERAL_ADMISSION');
   }
+  const capacity = mode === 'GENERAL_ADMISSION'
+    ? parsePositiveInteger(data.capacity, 'capacity', 10000000)
+    : null;
+  if (mode === 'ASSIGNED' && data.capacity !== undefined && data.capacity !== null) {
+    throw new BadRequestError('capacity is only valid for GENERAL_ADMISSION sections');
+  }
   return withDraftLayout(venueId, (tx) => tx.venueSection.create({
     data: {
       venueId,
       name,
       code: optionalString(data.code, 'code', 24),
       mode,
+      capacity,
       description: optionalString(data.description, 'description', 500),
       sortOrder: Number.isInteger(data.sortOrder) ? data.sortOrder : 0,
     },
@@ -177,26 +206,52 @@ const listSections = async (venueId, userId) => {
 const updateSection = async (venueId, sectionId, userId, data) => {
   await ensureVenueAccess(prisma, venueId, userId);
   return withDraftLayout(venueId, async (tx) => {
-  const section = await tx.venueSection.findFirst({ where: { id: sectionId, venueId, isActive: true } });
-  if (!section) throw new NotFoundError('Venue section not found');
-  const update = {};
-  if (data.name !== undefined) update.name = requireString(data.name, 'name', 100);
-  if (data.code !== undefined) update.code = optionalString(data.code, 'code', 24);
-  if (data.description !== undefined) update.description = optionalString(data.description, 'description', 500);
-  if (data.sortOrder !== undefined) {
-    if (!Number.isInteger(data.sortOrder)) throw new BadRequestError('sortOrder must be an integer');
-    update.sortOrder = data.sortOrder;
-  }
-  if (data.mode !== undefined) {
-    if (!['ASSIGNED', 'GENERAL_ADMISSION'].includes(data.mode)) throw new BadRequestError('Invalid section mode');
-    const activeSeats = await tx.venueSeat.count({ where: { sectionId, isActive: true } });
-    if (data.mode === 'GENERAL_ADMISSION' && activeSeats) {
-      throw new ConflictError('Remove or deactivate assigned seats before changing this section to general admission');
+    await tx.$queryRaw`SELECT id FROM venues WHERE id = ${venueId} FOR UPDATE`;
+    const section = await tx.venueSection.findFirst({ where: { id: sectionId, venueId, isActive: true } });
+    if (!section) throw new NotFoundError('Venue section not found');
+
+    const update = {};
+    if (data.name !== undefined) update.name = requireString(data.name, 'name', 100);
+    if (data.code !== undefined) update.code = optionalString(data.code, 'code', 24);
+    if (data.description !== undefined) update.description = optionalString(data.description, 'description', 500);
+    if (data.sortOrder !== undefined) {
+      if (!Number.isInteger(data.sortOrder)) throw new BadRequestError('sortOrder must be an integer');
+      update.sortOrder = data.sortOrder;
     }
-    update.mode = data.mode;
-  }
-  if (!Object.keys(update).length) throw new BadRequestError('No valid section fields were supplied');
-  return tx.venueSection.update({ where: { id: sectionId }, data: update });
+
+    const nextMode = data.mode !== undefined ? data.mode : section.mode;
+    if (!['ASSIGNED', 'GENERAL_ADMISSION'].includes(nextMode)) {
+      throw new BadRequestError('mode must be ASSIGNED or GENERAL_ADMISSION');
+    }
+    if (data.mode !== undefined && data.mode !== section.mode) {
+      const activeSeats = await tx.venueSeat.count({ where: { sectionId, isActive: true } });
+      if (nextMode === 'GENERAL_ADMISSION' && activeSeats) {
+        throw new ConflictError('Remove or deactivate assigned seats before changing this section to general admission');
+      }
+      update.mode = nextMode;
+    }
+
+    if (nextMode === 'GENERAL_ADMISSION') {
+      const nextCapacity = data.capacity !== undefined
+        ? parsePositiveInteger(data.capacity, 'capacity', 10000000)
+        : section.capacity;
+      if (!nextCapacity) {
+        throw new BadRequestError('A GENERAL_ADMISSION section requires a positive capacity');
+      }
+      if (data.capacity !== undefined && nextCapacity !== section.capacity) {
+        // Capacity is captured in immutable layout snapshots. Updating the
+        // mutable section row affects only layout versions published later.
+        update.capacity = nextCapacity;
+      }
+    } else {
+      if (data.capacity !== undefined && data.capacity !== null) {
+        throw new BadRequestError('capacity is only valid for GENERAL_ADMISSION sections');
+      }
+      if (section.capacity !== null || section.mode !== nextMode) update.capacity = null;
+    }
+
+    if (!Object.keys(update).length) throw new BadRequestError('No valid section fields were supplied');
+    return tx.venueSection.update({ where: { id: sectionId }, data: update });
   });
 };
 
@@ -223,6 +278,7 @@ const addSeats = async (venueId, sectionId, userId, seats) => {
   if (section.mode !== 'ASSIGNED') throw new BadRequestError('Seats can only be added to assigned-seating sections');
 
   const normalized = seats.map((seat) => {
+    if (!seat || typeof seat !== 'object' || Array.isArray(seat)) throw new BadRequestError('Each seat entry must be an object');
     const rowLabel = requireString(seat.rowLabel, 'rowLabel', 24);
     const seatLabel = requireString(seat.seatLabel, 'seatLabel', 24);
     if (seat.x !== undefined && (typeof seat.x !== 'number' || !Number.isFinite(seat.x))) {
@@ -312,6 +368,9 @@ const publishLayoutVersion = async (venueId, layoutVersionId, userId) => {
       if (section.mode === 'GENERAL_ADMISSION' && section.seats.length) {
         throw new BadRequestError('General-admission section ' + section.name + ' cannot contain individual seats');
       }
+      if (section.mode === 'GENERAL_ADMISSION' && (!Number.isInteger(section.capacity) || section.capacity < 1)) {
+        throw new BadRequestError('General-admission section ' + section.name + ' must have a positive capacity before publishing the layout');
+      }
     }
 
     const snapshot = {
@@ -325,6 +384,7 @@ const publishLayoutVersion = async (venueId, layoutVersionId, userId) => {
         name: section.name,
         code: section.code,
         mode: section.mode,
+        capacity: section.capacity,
         sortOrder: section.sortOrder,
         seats: section.seats,
       })),

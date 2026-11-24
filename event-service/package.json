@@ -5,30 +5,37 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "dev": "node --watch src/index.js",
     "db:generate": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "test": "node --test"
   },
-  "keywords": ["ticketflow", "events", "ticketing"],
+  "keywords": [
+    "ticketflow",
+    "events",
+    "ticketing"
+  ],
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@prisma/adapter-pg": "^7.4.1",
-    "@prisma/client": "^7.4.1",
-    "cookie-parser": "^1.4.7",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
     "kafkajs": "^2.2.4",
     "pg": "^8.19.0",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "express-rate-limit": "^8.7.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14",
-    "prisma": "^7.4.1"
+    "prisma": "^7.10.1"
+  },
+  "overrides": {
+    "effect": "^3.22.5",
+    "ip-address": "^10.7.6"
   }
 }

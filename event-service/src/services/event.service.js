@@ -1,7 +1,7 @@
 const { randomUUID } = require('crypto');
 const prisma = require('../config/prisma');
 const { BadRequestError, ConflictError, NotFoundError } = require('../utils/error');
-const { requireString, optionalString, slugify } = require('../utils/validation');
+const { requireString, optionalString, optionalUrl, slugify } = require('../utils/validation');
 const { assertOrganizerAccess } = require('./organizer.service');
 const { createOutboxEvent } = require('./outbox.service');
 
@@ -20,8 +20,8 @@ const createEvent = async (organizerId, userId, data) => {
       slug,
       description: optionalString(data.description, 'description', 10000),
       category,
-      posterImageUrl: optionalString(data.posterImageUrl, 'posterImageUrl', 1000),
-      bannerImageUrl: optionalString(data.bannerImageUrl, 'bannerImageUrl', 1000),
+      posterImageUrl: optionalUrl(data.posterImageUrl, 'posterImageUrl', 1000),
+      bannerImageUrl: optionalUrl(data.bannerImageUrl, 'bannerImageUrl', 1000),
     },
   });
 };
@@ -71,26 +71,32 @@ const getEventForOrganizer = async (eventId, userId) => {
 };
 
 const updateEvent = async (eventId, userId, data) => {
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event) throw new NotFoundError('Event not found');
-  await assertOrganizerAccess(prisma, event.organizerId, userId, ['OWNER', 'ADMIN', 'EDITOR']);
-  if (['CANCELLED', 'COMPLETED'].includes(event.status)) {
-    throw new ConflictError('Cancelled or completed events cannot be edited');
-  }
-
   const update = {};
   if (data.title !== undefined) update.title = requireString(data.title, 'title', 180);
   if (data.description !== undefined) update.description = optionalString(data.description, 'description', 10000);
   if (data.category !== undefined) update.category = requireString(data.category, 'category', 80);
-  if (data.posterImageUrl !== undefined) update.posterImageUrl = optionalString(data.posterImageUrl, 'posterImageUrl', 1000);
-  if (data.bannerImageUrl !== undefined) update.bannerImageUrl = optionalString(data.bannerImageUrl, 'bannerImageUrl', 1000);
+  if (data.posterImageUrl !== undefined) update.posterImageUrl = optionalUrl(data.posterImageUrl, 'posterImageUrl', 1000);
+  if (data.bannerImageUrl !== undefined) update.bannerImageUrl = optionalUrl(data.bannerImageUrl, 'bannerImageUrl', 1000);
   if (!Object.keys(update).length) throw new BadRequestError('No valid event fields were supplied');
 
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.event.update({
-      where: { id: eventId },
+    await tx.$queryRaw`SELECT id FROM events WHERE id = ${eventId} FOR UPDATE`;
+    const event = await tx.event.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundError('Event not found');
+    await assertOrganizerAccess(tx, event.organizerId, userId, ['OWNER', 'ADMIN', 'EDITOR']);
+    if (['CANCELLED', 'COMPLETED'].includes(event.status)) {
+      throw new ConflictError('Cancelled or completed events cannot be edited');
+    }
+
+    const transition = await tx.event.updateMany({
+      where: { id: eventId, status: event.status, version: event.version },
       data: { ...update, version: { increment: 1 } },
     });
+    if (!transition.count) {
+      throw new ConflictError('Event was modified by another request; reload it and retry');
+    }
+
+    const updated = await tx.event.findUnique({ where: { id: eventId } });
     if (event.status === 'PUBLISHED') {
       await createOutboxEvent(tx, {
         aggregateType: 'EVENT',
@@ -113,8 +119,10 @@ const updateEvent = async (eventId, userId, data) => {
   });
 };
 
-const publishEvent = async (eventId, userId) => {
-  const event = await prisma.event.findUnique({
+const publishEvent = async (eventId, userId) => prisma.$transaction(async (tx) => {
+  // Match occurrence creation/cancellation lock order: event first, then occurrences.
+  await tx.$queryRaw`SELECT id FROM events WHERE id = ${eventId} FOR UPDATE`;
+  let event = await tx.event.findUnique({
     where: { id: eventId },
     include: {
       occurrences: {
@@ -126,9 +134,25 @@ const publishEvent = async (eventId, userId) => {
     },
   });
   if (!event) throw new NotFoundError('Event not found');
-  await assertOrganizerAccess(prisma, event.organizerId, userId, ['OWNER', 'ADMIN', 'EDITOR']);
+  await assertOrganizerAccess(tx, event.organizerId, userId, ['OWNER', 'ADMIN', 'EDITOR']);
   if (event.status === 'PUBLISHED') return event;
   if (event.status !== 'DRAFT') throw new ConflictError('Only draft events can be published');
+
+  await tx.$queryRaw`SELECT id FROM event_occurrences WHERE "eventId" = ${eventId} ORDER BY id FOR UPDATE`;
+  // Re-read under the occurrence locks so ticket-type and layout checks are stable.
+  event = await tx.event.findUnique({
+    where: { id: eventId },
+    include: {
+      occurrences: {
+        include: {
+          layoutVersion: { select: { status: true } },
+          ticketTypes: { where: { status: 'ACTIVE' }, select: { id: true } },
+        },
+      },
+    },
+  });
+  if (!event) throw new NotFoundError('Event not found');
+  if (event.status !== 'DRAFT') throw new ConflictError('Event status changed before publication could complete');
   if (!event.occurrences.length) throw new BadRequestError('Add at least one occurrence before publishing the event');
   for (const occurrence of event.occurrences) {
     if (occurrence.layoutVersion.status !== 'PUBLISHED') {
@@ -139,37 +163,36 @@ const publishEvent = async (eventId, userId) => {
     }
   }
 
-  return prisma.$transaction(async (tx) => {
-    const transition = await tx.event.updateMany({
-      where: { id: eventId, status: 'DRAFT' },
-      data: { status: 'PUBLISHED', publishedAt: new Date(), version: { increment: 1 } },
-    });
-    if (!transition.count) {
-      const current = await tx.event.findUnique({ where: { id: eventId } });
-      if (current?.status === 'PUBLISHED') return current;
-      throw new ConflictError('Event status changed before publication could complete');
-    }
-    const updated = await tx.event.findUnique({ where: { id: eventId } });
-    await createOutboxEvent(tx, {
-      aggregateType: 'EVENT',
-      aggregateId: updated.id,
-      aggregateVersion: updated.version,
-      eventType: 'event.published',
-      data: {
-        id: updated.id,
-        organizerId: updated.organizerId,
-        title: updated.title,
-        slug: updated.slug,
-        description: updated.description,
-        category: updated.category,
-        posterImageUrl: updated.posterImageUrl,
-        bannerImageUrl: updated.bannerImageUrl,
-        publishedAt: updated.publishedAt,
-      },
-    });
-    return updated;
+  const publishedAt = new Date();
+  const transition = await tx.event.updateMany({
+    where: { id: eventId, status: 'DRAFT', version: event.version },
+    data: { status: 'PUBLISHED', publishedAt, version: { increment: 1 } },
   });
-};
+  if (!transition.count) {
+    throw new ConflictError('Event configuration changed before publication could complete');
+  }
+
+  const updated = await tx.event.findUnique({ where: { id: eventId } });
+  await createOutboxEvent(tx, {
+    aggregateType: 'EVENT',
+    aggregateId: updated.id,
+    aggregateVersion: updated.version,
+    eventType: 'event.published',
+    data: {
+      id: updated.id,
+      organizerId: updated.organizerId,
+      title: updated.title,
+      slug: updated.slug,
+      description: updated.description,
+      category: updated.category,
+      posterImageUrl: updated.posterImageUrl,
+      bannerImageUrl: updated.bannerImageUrl,
+      publishedAt: updated.publishedAt,
+    },
+  });
+  return updated;
+});
+
 
 const cancelEvent = async (eventId, userId, reason) => {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
@@ -217,29 +240,33 @@ const cancelEvent = async (eventId, userId, reason) => {
 
 const listPublicEvents = async ({ category, city, limit = 20, cursor } = {}) => {
   const take = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const now = new Date();
+  const occurrenceFilter = {
+    status: { in: ['SCHEDULED', 'ON_SALE'] },
+    startsAt: { gt: now },
+    venue: {
+      status: 'ACTIVE',
+      ...(city ? { city: { equals: city, mode: 'insensitive' } } : {}),
+    },
+  };
   const where = {
     status: 'PUBLISHED',
     ...(category ? { category: { equals: category, mode: 'insensitive' } } : {}),
-    occurrences: {
-      some: {
-        status: { in: ['SCHEDULED', 'ON_SALE'] },
-        ...(city ? { venue: { city: { equals: city, mode: 'insensitive' } } } : {}),
-        startsAt: { gt: new Date() },
-      },
-    },
+    occurrences: { some: occurrenceFilter },
   };
+
   return prisma.event.findMany({
     where,
     take,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     include: {
       occurrences: {
-        where: { status: { in: ['SCHEDULED', 'ON_SALE'] }, startsAt: { gt: new Date() } },
+        where: occurrenceFilter,
         include: { venue: { select: { id: true, name: true, city: true, timezone: true } } },
         orderBy: { startsAt: 'asc' },
       },
     },
-    orderBy: { publishedAt: 'desc' },
+    orderBy: [{ publishedAt: 'desc' }, { id: 'asc' }],
   });
 };
 
@@ -249,7 +276,7 @@ const getPublicEventBySlug = async (slug) => {
     include: {
       organizer: { select: { id: true, name: true, slug: true } },
       occurrences: {
-        where: { status: { in: ['SCHEDULED', 'ON_SALE'] }, startsAt: { gt: new Date() } },
+        where: { status: { in: ['SCHEDULED', 'ON_SALE'] }, startsAt: { gt: new Date() }, venue: { status: 'ACTIVE' } },
         include: {
           venue: { select: { id: true, name: true, address: true, city: true, state: true, country: true, timezone: true } },
           layoutVersion: { select: { id: true, version: true, snapshot: true } },

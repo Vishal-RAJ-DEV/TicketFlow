@@ -21,10 +21,16 @@ const getProfile = async(userId) =>{
      })
      
      logger.info("Exclude password field from the user");
+     if (!userProfile) return null;
      const {password: _password, ...safeUser} = userProfile;
      logger.info("Store user profile in redis for future lookups");
      await redis.set(`user:${userId}`, JSON.stringify(safeUser), 'EX', config.REDIS_USER_TTL);
      return safeUser;
 }
 
-module.exports = {getProfile}
+const getInternalUserStatus = async (userId) => prisma.user.findUnique({
+     where: { id: userId },
+     select: { id: true, status: true, emailVerified: true, firstName: true, lastName: true, email: true },
+});
+
+module.exports = {getProfile, getInternalUserStatus}

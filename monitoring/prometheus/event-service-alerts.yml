@@ -1,0 +1,43 @@
+groups:
+  - name: ticketflow-event-service-outbox
+    interval: 30s
+    rules:
+      - alert: TicketFlowOutboxBacklogGrowing
+        expr: ticketflow_outbox_pending_events > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: event-service
+        annotations:
+          summary: Event Service outbox backlog is above 1,000 events
+          description: Pending outbox records are accumulating. Check Kafka connectivity, publisher logs, and database health.
+
+      - alert: TicketFlowOutboxOldestEventStale
+        expr: ticketflow_outbox_oldest_pending_seconds > 60
+        for: 2m
+        labels:
+          severity: warning
+          service: event-service
+        annotations:
+          summary: Event Service has an outbox event pending for over 60 seconds
+          description: Investigate the outbox publisher, Kafka broker and PostgreSQL health.
+
+      - alert: TicketFlowOutboxDeadLetterPresent
+        expr: ticketflow_outbox_dead_letter_events > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: event-service
+        annotations:
+          summary: Event Service has dead-lettered outbox records
+          description: Inspect the protected dead-letter endpoint. Resolve the underlying failure before retrying records.
+
+      - alert: TicketFlowOutboxMetricsMissing
+        expr: absent(ticketflow_outbox_pending_events)
+        for: 5m
+        labels:
+          severity: warning
+          service: event-service
+        annotations:
+          summary: Event Service outbox metrics are missing
+          description: Check the scrape target, mTLS certificate allowlist, metrics token and Event Service availability.

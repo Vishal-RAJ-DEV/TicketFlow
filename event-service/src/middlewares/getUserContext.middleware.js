@@ -1,12 +1,12 @@
 const { UnauthorizedError } = require('../utils/error');
-
-function getUserContext(req, res, next) {
-  const userId = req.headers['x-user-id'];
-  if (!userId) {
-    return next(new UnauthorizedError('User context missing - request must pass through the API Gateway'));
+const { assertActiveUser } = require('../services/userDirectory.service');
+async function getUserContext(req, res, next) {
+  if (!req.user?.id) return next(new UnauthorizedError('Authenticated user context is required'));
+  try {
+    await assertActiveUser(String(req.user.id));
+    return next();
+  } catch (error) {
+    return next(error);
   }
-  req.user = { id: userId.toString() };
-  next();
 }
-
 module.exports = { getUserContext };

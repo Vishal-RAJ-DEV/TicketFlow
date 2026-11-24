@@ -34,7 +34,7 @@ exports.getUserInternal = asyncHandler(async(req, res) =>{
           throw new BadRequestError("User Id is missing");
      }
 
-     const user = await userService.getProfile(userId);
+     const user = await userService.getInternalUserStatus(userId);
      if(!user){
           throw new NotFoundError("User not found");
      }
@@ -46,6 +46,8 @@ exports.getUserInternal = asyncHandler(async(req, res) =>{
                firstName: user.firstName,
                lastName: user.lastName,
                email: user.email,
+               status: user.status,
+               active: user.status === 'ACTIVE',
           }
      });
 })

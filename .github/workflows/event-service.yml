@@ -1,28 +1,62 @@
 name: Event Service CI
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     paths:
       - 'event-service/**'
+      - 'user-service/**'
+      - 'booking-service/**'
+      - 'payment-service/**'
+      - 'load-tests/**'
+      - 'monitoring/**'
+      - 'docker-compose.production.yml'
       - 'api-gateway/src/**'
+      - 'api-gateway/test/**'
+      - 'api-gateway/package.json'
+      - 'api-gateway/package-lock.json'
       - 'api-gateway/.env.example'
-      - 'shared/constants/kafka-topics.js'
+      - 'shared/constants/**'
+      - 'shared/utils/**'
       - 'docker-compose.yml'
+      - '.env.example'
+      - 'README.md'
       - 'docs/EVENT-SERVICE.md'
       - 'docs/KAFKA-EVENT-CONTRACTS.md'
+      - 'docs/DATABASE-DESIGN.md'
+      - 'docs/DOMAIN-MODEL.md'
+      - 'scripts/**'
       - '.github/workflows/event-service.yml'
+      - '.github/workflows/codeql.yml'
   push:
     branches:
       - main
       - 'phase-2/**'
+      - 'phase-2.1/**'
     paths:
       - 'event-service/**'
+      - 'user-service/**'
+      - 'booking-service/**'
+      - 'payment-service/**'
+      - 'load-tests/**'
+      - 'monitoring/**'
+      - 'docker-compose.production.yml'
       - 'api-gateway/src/**'
+      - 'api-gateway/test/**'
+      - 'api-gateway/package.json'
+      - 'api-gateway/package-lock.json'
       - 'api-gateway/.env.example'
-      - 'shared/constants/kafka-topics.js'
+      - 'shared/constants/**'
+      - 'shared/utils/**'
       - 'docker-compose.yml'
+      - '.env.example'
+      - 'README.md'
       - 'docs/EVENT-SERVICE.md'
       - 'docs/KAFKA-EVENT-CONTRACTS.md'
+      - 'docs/DATABASE-DESIGN.md'
+      - 'docs/DOMAIN-MODEL.md'
       - '.github/workflows/event-service.yml'
 
 jobs:
@@ -42,30 +76,129 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     defaults:
       run:
         working-directory: event-service
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/event_service_ci
+      RUN_DATABASE_INTEGRATION: 'true'
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-only-access-secret-that-is-at-least-32-characters
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-that-is-at-least-32-characters
+      GATEWAY_ASSERTION_SECRET: ci-only-gateway-assertion-secret-that-is-at-least-32-characters
+      CSRF_SECRET: ci-only-csrf-hmac-secret-that-is-at-least-32-characters
+      USER_SERVICE_INTERNAL_KEY: ci-only-user-service-internal-key-that-is-at-least-32-characters
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: event-service/package-lock.json
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm ci --prefix ../api-gateway
+          npm ci --prefix ../user-service
+          npm ci --prefix ../booking-service
+          npm ci --prefix ../payment-service
+      - name: Audit committed dependency lockfiles
+        working-directory: .
+        run: |
+          set -euo pipefail
+          for service in event-service api-gateway user-service booking-service payment-service; do
+            echo "===== Full dependency audit: $service ====="
+            full_report="$RUNNER_TEMP/$service-full-audit.json"
+            (cd "$GITHUB_WORKSPACE/$service" && npm audit --json > "$full_report") || true
+            node scripts/report-npm-audit.js "$full_report" "$service" full
+
+            echo "===== Production dependency audit: $service ====="
+            production_dir="$RUNNER_TEMP/$service-production-dependencies"
+            production_report="$RUNNER_TEMP/$service-production-audit.json"
+            mkdir -p "$production_dir"
+            cp "$GITHUB_WORKSPACE/$service/package.json" "$production_dir/package.json"
+            # Build an isolated graph from production dependencies only, without
+            # reusing the dev-inclusive lockfile (which can retain optional dev peers).
+            node - "$production_dir/package.json" <<'NODE'
+            const fs = require('node:fs');
+            const file = process.argv[2];
+            const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+            delete pkg.devDependencies;
+            delete pkg.scripts;
+            fs.writeFileSync(file, JSON.stringify(pkg, null, 2));
+          NODE
+            (cd "$production_dir" && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
+            (cd "$production_dir" && npm audit --package-lock-only --json > "$production_report") || true
+            node scripts/report-npm-audit.js "$production_report" "$service" production
+          done
       - name: Validate Prisma schema
         run: npx prisma validate
       - name: Apply PostgreSQL migrations
         run: npx prisma migrate deploy
+      - name: Generate Prisma Client
+        run: npx prisma generate
       - name: Check JavaScript syntax
         run: |
           while IFS= read -r file; do
             node --check "$file"
-          done < <(find src test -type f -name '*.js' -print)
-      - name: Run unit tests
+          done < <(find src test ../api-gateway/src ../api-gateway/test ../shared ../user-service/src ../user-service/test ../booking-service/src ../payment-service/src ../scripts -type f -name '*.js' -print)
+      - name: Run Event Service unit and integration tests
         run: npm test
+      - name: Run API Gateway CSRF tests
+        working-directory: .
+        run: npm test --prefix api-gateway
+      - name: Run User Service internal authentication tests
+        working-directory: .
+        run: npm test --prefix user-service
+      - name: Validate production Compose overlay
+        working-directory: .
+        env:
+          USER_SERVICE_URL: https://user-service:4001
+          SEARCH_SERVICE_URL: https://search-service:4002
+          NOTIFICATION_SERVICE_URL: https://notification-service:4004
+          BOOKING_SERVICE_URL: https://order-service:4005
+          PAYMENT_SERVICE_URL: https://payment-service:4006
+          INVENTORY_SERVICE_URL: https://inventory-service:4007
+          ALLOWED_ORIGINS: https://ticketflow.example.com
+          KAFKA_BROKER: kafka:9093
+          KAFKA_SASL_USERNAME: event-service
+          USER_SERVICE_INTERNAL_KEY_FILE: /tmp/user-key
+          REDIS_URL_SECRET_FILE: /tmp/redis-url
+          JWT_ACCESS_SECRET_FILE: /tmp/jwt-access
+          JWT_REFRESH_SECRET_FILE: /tmp/jwt-refresh
+          GATEWAY_ASSERTION_SECRET_FILE: /tmp/gateway-secret
+          CSRF_SECRET_FILE: /tmp/csrf-secret
+          GATEWAY_ASSERTION_SECRET_PREVIOUS_FILE: /tmp/gateway-secret-previous
+          EVENT_DATABASE_URL_SECRET_FILE: /tmp/database-url
+          EVENT_SERVICE_CERT_FILE: /tmp/event-cert
+          EVENT_SERVICE_KEY_FILE: /tmp/event-key
+          GATEWAY_CLIENT_CA_FILE: /tmp/client-ca
+          EVENT_SERVICE_CA_FILE: /tmp/event-ca
+          GATEWAY_CLIENT_CERT_FILE: /tmp/gateway-cert
+          GATEWAY_CLIENT_KEY_FILE: /tmp/gateway-key
+          KAFKA_CA_FILE: /tmp/kafka-ca
+          KAFKA_SASL_PASSWORD_FILE: /tmp/kafka-password
+          EVENT_SERVICE_OPS_TOKEN_FILE: /tmp/ops-token
+          EVENT_SERVICE_METRICS_TOKEN_FILE: /tmp/metrics-token
+        run: docker compose -f docker-compose.production.yml config --quiet
+      - name: Validate Docker Compose configuration
+        working-directory: .
+        env:
+          GATEWAY_ASSERTION_SECRET: ci-only-gateway-secret-that-is-longer-than-32-characters
+        run: docker compose config --quiet
+      - name: Build Event Service image
+        working-directory: .
+        run: docker build -f event-service/Dockerfile -t ticketflow-event-service:ci .
