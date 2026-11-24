@@ -12,8 +12,7 @@ process.env.SENDGRID_API_KEY = 'unit-test-sendgrid-key';
 process.env.MAIL_SEND = 'false';
 process.env.CSRF_SECRET = 'user-service-test-csrf-hmac-secret-at-least-32-characters';
 
-const { validateUserServiceCsrfCookie } = require('../src/index');
-const {
+const { validateUserServiceCsrfCookie, 
   SESSION_COOKIE_NAME,
   CSRF_MIRROR_COOKIE_NAME,
   csrfCookieOptions,
