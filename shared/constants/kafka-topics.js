@@ -28,6 +28,7 @@ const KAFKA_TOPICS = {
      EVENT_OCCURRENCE_SALES_OPENED: 'event.occurrence-sales-opened',
      EVENT_OCCURRENCE_SALES_CLOSED: 'event.occurrence-sales-closed',
      EVENT_OCCURRENCE_COMPLETED: 'event.occurrence-completed',
+     EVENT_TICKET_TYPE_STATUS_CHANGED: 'event.ticket-type-status-changed',
      VENUE_LAYOUT_VERSION_PUBLISHED: 'venue.layout-version-published',
 
      // Inventory topics (inventory-service -> search-service)
