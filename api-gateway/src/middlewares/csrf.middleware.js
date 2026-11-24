@@ -7,7 +7,7 @@ const { config } = require('../config');
 const isProduction = config.NODE_ENV === 'production';
 const SESSION_COOKIE_NAME = isProduction ? '__Host-ticketflow-csrf-session' : 'ticketflow-csrf-session';
 const CSRF_COOKIE_NAME = isProduction ? '__Host-ticketflow-csrf' : 'ticketflow-csrf';
-const CSRF_MIRROR_COOKIE_NAME = isProduction ? '__Host-ticketflow-csrf-mirror' : 'ticketflow-csrf-mirror';
+const CSRF_MIRROR_COOKIE_NAME = isProduction ? '__Host-psifi.x-csrf-token' : 'x-csrf-token';
 const COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const csrfCookieOptions = {
@@ -56,9 +56,12 @@ const validateCsrfDoubleSubmit = (req, res, next) => {
 
   // Explicit cookie/header equality is an additional double-submit check.
   // The following doubleCsrfProtection middleware verifies HMAC and session binding.
-  const csrfCookie = req.cookies?.[CSRF_MIRROR_COOKIE_NAME];
+  const csrfCookie =
+    (req.cookies && req.cookies['x-csrf-token']) ||
+    (req.cookies && req.cookies['__Host-psifi.x-csrf-token']);
   const csrfHeader = req.headers['x-csrf-token'];
-  if (typeof csrfCookie !== 'string' || typeof csrfHeader !== 'string' || csrfCookie !== csrfHeader) {
+  req.csrfHeaderMatchesCookie = csrfCookie === csrfHeader;
+  if (typeof csrfCookie !== 'string' || typeof csrfHeader !== 'string' || !req.csrfHeaderMatchesCookie) {
     const error = new Error('Invalid CSRF token');
     error.statusCode = 403;
     error.code = 'EBADCSRFTOKEN';
