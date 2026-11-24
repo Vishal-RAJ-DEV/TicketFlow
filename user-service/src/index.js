@@ -12,6 +12,30 @@ const { corsMiddleware } = require('./middlewares/cors.middleware');
 const errorHandler = require('./middlewares/error.middleware');
 const { reqLogger } = require('./middlewares/req.middleware');
 const { disconnectProducer } = require('./config/kafka');
+const { doubleCsrfProtection } = require('./middlewares/csrf.middleware');
+
+// Inline double-submit check makes the cookie/header contract explicit at the
+// service boundary. The csrf-csrf middleware below also verifies the token HMAC
+// and binds it to the Gateway-issued browser session cookie.
+function validateUserServiceCsrfCookie(req, res, next) {
+     const authorization = req.headers.authorization;
+     const isBearerRequest = typeof authorization === 'string' && /^Bearer\\s+\\S+$/i.test(authorization);
+     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || isBearerRequest) return next();
+
+     const csrfCookie =
+          (req.cookies && req.cookies['x-csrf-token']) ||
+          (req.cookies && req.cookies['__Host-psifi.x-csrf-token']);
+     const csrfHeader = req.headers['x-csrf-token'];
+     req.csrfHeaderMatchesCookie = csrfCookie === csrfHeader;
+
+     if (typeof csrfCookie !== 'string' || typeof csrfHeader !== 'string' || !req.csrfHeaderMatchesCookie) {
+          const error = new Error('Invalid CSRF token');
+          error.statusCode = 403;
+          error.code = 'EBADCSRFTOKEN';
+          return next(error);
+     }
+     return next();
+}
 
 const app = express();
 
@@ -23,6 +47,8 @@ app.use(helmet({
 app.use(reqLogger);
 app.use(express.json());
 app.use(cookieParser());
+app.use(validateUserServiceCsrfCookie);
+app.use(doubleCsrfProtection);
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 
@@ -63,4 +89,5 @@ const startServer = async () => {
           process.exit(1);
      }
 }
-startServer();
+if (require.main === module) startServer();
+module.exports = { app, startServer, validateUserServiceCsrfCookie };
