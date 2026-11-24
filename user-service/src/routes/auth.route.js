@@ -1,7 +1,6 @@
 const express = require('express');
 const { rateLimit } = require('express-rate-limit');
 const { validateCsrfDoubleSubmit, doubleCsrfProtection } = require('../middlewares/csrf.middleware');
-const csrfProtection = [validateCsrfDoubleSubmit, doubleCsrfProtection];
 
 const rateLimitResponse = (_req, res) => res.status(429).json({
   success: false,
@@ -16,9 +15,9 @@ const googleAuthRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, sta
 const router = express.Router();
 const {sendOTP, verifyOTP, login, rotateRefreshToken, verifyGoogleIdToken} = require('../controllers/auth.controller');
 
-router.post("/send-otp", sendOtpRateLimit, ...csrfProtection, sendOTP);
-router.post("/verify-otp", verifyOtpRateLimit, ...csrfProtection, verifyOTP);
-router.post("/login", loginRateLimit, ...csrfProtection, login);
-router.post("/refresh", refreshRateLimit, ...csrfProtection, rotateRefreshToken);
-router.post("/google-auth", googleAuthRateLimit, ...csrfProtection, verifyGoogleIdToken);
+router.post("/send-otp", sendOtpRateLimit, validateCsrfDoubleSubmit, doubleCsrfProtection, sendOTP);
+router.post("/verify-otp", verifyOtpRateLimit, validateCsrfDoubleSubmit, doubleCsrfProtection, verifyOTP);
+router.post("/login", loginRateLimit, validateCsrfDoubleSubmit, doubleCsrfProtection, login);
+router.post("/refresh", refreshRateLimit, validateCsrfDoubleSubmit, doubleCsrfProtection, rotateRefreshToken);
+router.post("/google-auth", googleAuthRateLimit, validateCsrfDoubleSubmit, doubleCsrfProtection, verifyGoogleIdToken);
 module.exports = router;
