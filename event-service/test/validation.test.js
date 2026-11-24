@@ -45,6 +45,7 @@ test('slugifies very long separator runs in linear time without regex backtracki
   const input = 'A'.repeat(64) + '-'.repeat(200000) + 'B';
   assert.equal(slugify(input), 'a'.repeat(64) + '-b');
   assert.equal(slugify('---Café---Music---'), 'cafe-music');
+  assert.equal(slugify('CaféMusic'), 'cafemusic');
 });
 
 test('creates URL-safe slugs and normalizes accents', () => {
