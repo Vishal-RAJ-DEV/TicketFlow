@@ -130,6 +130,10 @@ const slugify = (value) => {
   // One pass avoids ambiguous repeated regex matching on attacker-controlled input.
   for (const character of normalized) {
     const code = character.charCodeAt(0);
+    // NFKD decomposes accents into ASCII letters plus combining marks.
+    // Drop the combining marks to preserve the previous accent-normalization behavior.
+    if (code >= 0x0300 && code <= 0x036f) continue;
+
     const isAsciiLetter = code >= 97 && code <= 122;
     const isAsciiDigit = code >= 48 && code <= 57;
 
