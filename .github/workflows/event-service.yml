@@ -130,9 +130,8 @@ jobs:
             production_report="$RUNNER_TEMP/$service-production-audit.json"
             mkdir -p "$production_dir"
             cp "$GITHUB_WORKSPACE/$service/package.json" "$production_dir/package.json"
-            cp "$GITHUB_WORKSPACE/$service/package-lock.json" "$production_dir/package-lock.json"
-            # Build an isolated production-only package graph from dependencies only.
-            # The copied manifest is temporary; the committed package.json/lockfile remain untouched.
+            # Build an isolated graph from production dependencies only, without
+            # reusing the dev-inclusive lockfile (which can retain optional dev peers).
             node - "$production_dir/package.json" <<'NODE'
             const fs = require('node:fs');
             const file = process.argv[2];
