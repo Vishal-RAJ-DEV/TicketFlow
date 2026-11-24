@@ -93,12 +93,26 @@ router.delete(
 const eventServiceProxy = createProxy('eventService', config.SERVICES.EVENT_SERVICE_URL, { gatewayAssertion: true });
 
 const eventRoute = (method, path, authenticated = true, limiter = combinedRateLimit()) => {
-     const isStateChanging = ['post', 'put', 'patch', 'delete'].includes(method);
-     const csrfHandlers = isStateChanging ? csrfProtection : [];
-     const handlers = authenticated
-          ? [...csrfHandlers, limiter, authorizationRateLimit, requireAuth, eventServiceProxy]
-          : [limiter, ...csrfHandlers, eventServiceProxy];
-     router[method](path, ...handlers);
+     if (authenticated) {
+          if (method === 'post') {
+               router.post(path, validateCsrfDoubleSubmit, doubleCsrfProtection, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          } else if (method === 'put') {
+               router.put(path, validateCsrfDoubleSubmit, doubleCsrfProtection, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          } else if (method === 'patch') {
+               router.patch(path, validateCsrfDoubleSubmit, doubleCsrfProtection, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          } else if (method === 'delete') {
+               router.delete(path, validateCsrfDoubleSubmit, doubleCsrfProtection, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          } else {
+               router.get(path, limiter, authorizationRateLimit, requireAuth, eventServiceProxy);
+          }
+          return;
+     }
+
+     if (method === 'post') router.post(path, limiter, validateCsrfDoubleSubmit, doubleCsrfProtection, eventServiceProxy);
+     else if (method === 'put') router.put(path, limiter, validateCsrfDoubleSubmit, doubleCsrfProtection, eventServiceProxy);
+     else if (method === 'patch') router.patch(path, limiter, validateCsrfDoubleSubmit, doubleCsrfProtection, eventServiceProxy);
+     else if (method === 'delete') router.delete(path, limiter, validateCsrfDoubleSubmit, doubleCsrfProtection, eventServiceProxy);
+     else router.get(path, limiter, eventServiceProxy);
 };
 
 // Public event discovery
