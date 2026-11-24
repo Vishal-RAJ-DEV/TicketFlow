@@ -38,7 +38,9 @@ app.get('/api/csrf', endpointRateLimit(60, 60000), (req, res) => {
   setCsrfTokenCookie(res, csrfToken);
   res.status(200).json({ success: true, csrfToken });
 });
-app.use('/api', validateCsrfDoubleSubmit);
+// Register the custom cookie/header CSRF guard globally so every unsafe handler is covered.
+// The signed csrf-csrf middleware then verifies the HMAC and browser-session binding for API routes.
+app.use(validateCsrfDoubleSubmit);
 app.use('/api', doubleCsrfProtection);
 
 app.get('/health', (req, res) => res.status(200).json({
