@@ -15,6 +15,7 @@ const { disconnectProducer } = require('./config/kafka');
 const { validateUserServiceCsrfCookie, doubleCsrfProtection } = require('./middlewares/csrf.middleware');
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(corsMiddleware);
 app.use(helmet({
