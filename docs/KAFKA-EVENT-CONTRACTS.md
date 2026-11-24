@@ -77,7 +77,7 @@ This is the proposed first contract set. Partition count, replication factor and
 | event.updated | Event Service | Search | eventId | Published event metadata changes |
 | event.cancelled | Event Service | Inventory, Order, Ticket, Search, Notification | eventId | Stop sales/coordinated cancellation |
 | event.occurrence-published | Event Service | Inventory, Search, Queue | occurrenceId | Materialize published occurrence configuration |
-| event.ticket-type-status-changed | Event Service | Inventory, Search | occurrenceId + ticketTypeId | Pause or resume new sales for a configured ticket type |
+| event.ticket-type-status-changed | Event Service | Inventory, Search | ticketTypeId | Pause or resume new sales for a configured ticket type |
 | venue.layout-version-published | Event Service | Inventory | layoutVersionId | Publish immutable venue layout snapshot |
 | inventory.hold-created | Inventory | Order, Analytics | orderId | Hold committed |
 | inventory.hold-confirmed | Inventory | Order, Analytics | orderId | Hold became sale |
