@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { randomBytes } = require('node:crypto');
 
 process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-access-secret-at-least-32-characters-long';
@@ -97,7 +98,7 @@ test('CSRF token cannot be replayed with another session cookie', async () => {
     const { csrfToken } = await bootstrap.json();
     const otherSession = cookie.replace(
       new RegExp(SESSION_COOKIE_NAME + '=[^;]+'),
-      SESSION_COOKIE_NAME + '=attacker-controlled-session'
+      SESSION_COOKIE_NAME + '=' + randomBytes(32).toString('base64url')
     );
 
     const response = await fetch(baseUrl + '/api/write', {
